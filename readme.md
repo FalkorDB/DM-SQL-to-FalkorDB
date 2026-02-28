@@ -67,11 +67,6 @@ cargo run --release -- --config example.config.yaml
 cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 ```
 
-### ClickHouse → FalkorDB
-
-- Location: `ClickHouse-to-FalkorDB/`
-- Status: Placeholder directory (no implementation checked in yet).
-
 ### Control plane (web UI + API)
 
 - Location: `control-plane/` (`control-plane/server` + `control-plane/ui`)
