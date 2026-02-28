@@ -1,0 +1,12 @@
+# Ignore Rust build artifacts
+/target/
+
+# MacOS filesystem noise
+.DS_Store
+
+# By default, keep generic example configs under version control
+# (example.config.json, example.rows.json)
+
+# Local-only Snowflake configs used for manual testing; do not commit
+snowflake_check.yaml
+snowflake_menu.yaml

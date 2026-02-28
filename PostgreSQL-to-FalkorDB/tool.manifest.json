@@ -1,0 +1,24 @@
+{
+  "id": "postgres",
+  "displayName": "PostgreSQL → FalkorDB",
+  "description": "Migrate and continuously sync structured data from PostgreSQL into FalkorDB using declarative mappings.",
+  "workingDir": "PostgreSQL-to-FalkorDB/postgres-to-falkordb",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "PostgreSQL-to-FalkorDB/postgres-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": false,
+    "supports_purge_mapping": false,
+    "supports_metrics": false
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "PostgreSQL-to-FalkorDB/postgres-to-falkordb/example.config.yaml",
+      "PostgreSQL-to-FalkorDB/postgres-to-falkordb/pagila_to_falkordb.yaml"
+    ]
+  }
+}

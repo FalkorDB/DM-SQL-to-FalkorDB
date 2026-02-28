@@ -1,0 +1,21 @@
+{
+  "falkordb": {
+    "endpoint": "falkor://127.0.0.1:6379",
+    "graph": "mvp_graph",
+    "max_unwind_batch_size": 1000
+  },
+  "source": {
+    "file": "example.rows.json"
+  },
+  "mapping": {
+    "labels": ["Customer"],
+    "key": {
+      "column": "customer_id",
+      "property": "customer_id"
+    },
+    "properties": {
+      "email": { "column": "email" },
+      "country": { "column": "country" }
+    }
+  }
+}

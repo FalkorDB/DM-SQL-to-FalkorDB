@@ -1,0 +1,15 @@
+# Rust / Cargo
+/target/
+**/target/
+
+# State files
+**/pagila_state.json
+**/state.json
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store

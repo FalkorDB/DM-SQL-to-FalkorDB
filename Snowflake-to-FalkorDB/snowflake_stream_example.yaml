@@ -1,0 +1,98 @@
+# Example: using a Snowflake stream to track updates and propagate them into FalkorDB
+#
+# Prerequisites (Snowflake):
+# - A base table, e.g. MY_DB.PUBLIC.CUSTOMERS
+# - A stream created on that table, e.g.:
+#     CREATE OR REPLACE STREAM MY_DB.PUBLIC.CUSTOMERS_STREAM ON TABLE MY_DB.PUBLIC.CUSTOMERS;
+#   The stream will expose changes with metadata columns such as METADATA$ACTION.
+#
+# This config treats INSERT/UPDATE rows as upserts and METADATA$ACTION = 'DELETE' rows as
+# deletes in FalkorDB.
+
+snowflake:
+  account: "MY_ACCOUNT"              # e.g. xy12345.eu-west-1
+  user: "LOAD_USER"
+  password: $SNOWFLAKE_PASSWORD      # resolved from environment by the loader
+  warehouse: "WH"
+  database: "MY_DB"
+  schema: "PUBLIC"
+  role: "SYSADMIN"
+  query_timeout_ms: 60000
+  # Optional: control how many rows are fetched per round trip for incremental loads
+  fetch_batch_size: 10000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"  # Adjust to your FalkorDB instance
+  graph: "customers_stream_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"                   # file-backed watermarks
+  file_path: "state_stream_example.json"
+
+mappings:
+  # 1) Customer nodes from a Snowflake stream
+  - type: node
+    name: customers_stream
+    source:
+      # Use the Snowflake stream as the source instead of the base table.
+      # The stream only contains changed rows since the last consumption.
+      stream: "MY_DB.PUBLIC.CUSTOMERS_STREAM"
+      # Optional: additional filter on the stream rows
+      # where: "REGION = 'EU'"
+    mode: incremental
+    delta:
+      # Kept for compatibility; not used to filter the stream SQL, but can be
+      # used for internal watermarks if you later switch back to table-based
+      # incremental loads.
+      updated_at_column: "UPDATED_AT"
+      # Map Snowflake stream deletes (METADATA$ACTION = 'DELETE') to FalkorDB deletes
+      deleted_flag_column: "METADATA$ACTION"
+      deleted_flag_value: "DELETE"
+    labels: ["Customer"]
+    key:
+      column: "CUSTOMER_ID"         # column in the stream row
+      property: "customer_id"       # property on the node
+    properties:
+      email:        { column: "EMAIL" }
+      country:      { column: "COUNTRY" }
+      first_name:   { column: "FIRST_NAME" }
+      last_name:    { column: "LAST_NAME" }
+
+  # 2) Optional edge mapping using the same stream (e.g. customer -> country)
+  #    This assumes the stream exposes a COUNTRY_CODE column and that you also
+  #    have a separate node mapping for Country nodes (not shown here).
+  #- type: edge
+  #  name: customer_country_stream
+  #  source:
+  #    stream: "MY_DB.PUBLIC.CUSTOMERS_STREAM"
+  #  mode: incremental
+  #  delta:
+  #    updated_at_column: "UPDATED_AT"
+  #    deleted_flag_column: "METADATA$ACTION"
+  #    deleted_flag_value: "DELETE"
+  #  relationship: "LIVES_IN"
+  #  direction: out                      # (:Customer)-[:LIVES_IN]->(:Country)
+  #  from:
+  #    node_mapping: customers_stream
+  #    match_on:
+  #      - column: "CUSTOMER_ID"
+  #        property: "customer_id"
+  #  to:
+  #    node_mapping: countries           # define a separate node mapping for countries
+  #    match_on:
+  #      - column: "COUNTRY_CODE"
+  #        property: "code"
+  #  properties: {}
+
+# Usage:
+#   export SNOWFLAKE_PASSWORD=...
+#   cargo run --release -- --config snowflake_stream_example.yaml
+#
+# On each run, the loader will:
+# - Read change rows from the Snowflake stream.
+# - Upsert Customer nodes for INSERT/UPDATE events.
+# - Delete Customer nodes when METADATA$ACTION == 'DELETE'.
+#
+# If you run in daemon mode, the stream acts as a continuous change feed from Snowflake
+# into FalkorDB.

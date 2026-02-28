@@ -1,0 +1,14 @@
+.DS_Store
+
+# Rust
+**/target/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Control-plane runtime
+control-plane/data/
+
+# Logs
+*.log

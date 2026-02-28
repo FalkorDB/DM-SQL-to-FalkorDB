@@ -1,0 +1,20 @@
+name: Spellcheck
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  spellcheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Spellcheck
+        # Treat spelling issues as best-effort so they don't block CI.
+        continue-on-error: true
+        uses: rojopolis/spellcheck-github-actions@0.50.0
+        with:
+          config_path: .github/spellcheck-settings.yml
+          task_name: Markdown

@@ -1,0 +1,26 @@
+{
+  "id": "snowflake",
+  "displayName": "Snowflake → FalkorDB",
+  "description": "Migrate and continuously sync structured data from Snowflake into FalkorDB using declarative mappings.",
+  "workingDir": "Snowflake-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Snowflake-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "Snowflake-to-FalkorDB/snowflake_check.yaml",
+      "Snowflake-to-FalkorDB/snowflake_menu.yaml",
+      "Snowflake-to-FalkorDB/snowflake_stream_example.yaml",
+      "Snowflake-to-FalkorDB/example.config.json"
+    ]
+  }
+}

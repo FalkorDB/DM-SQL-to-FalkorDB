@@ -1,0 +1,21 @@
+{
+  "id": "databricks",
+  "displayName": "Databricks → FalkorDB",
+  "description": "Load and incrementally sync tabular data from Databricks SQL into FalkorDB using declarative mappings.",
+  "workingDir": "Databricks-to-FalkorDB/databricks-to-falkordb",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Databricks-to-FalkorDB/databricks-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": false,
+    "supports_purge_graph": false,
+    "supports_purge_mapping": false,
+    "supports_metrics": false
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": []
+  }
+}

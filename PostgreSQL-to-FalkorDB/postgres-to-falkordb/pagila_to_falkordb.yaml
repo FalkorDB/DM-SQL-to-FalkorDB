@@ -1,0 +1,207 @@
+# Example config: load Pagila sample schema from PostgreSQL into FalkorDB
+#
+# Usage:
+#   export POSTGRES_URL="postgres:///pagila_falkordb"   # or full URL with user/password/host
+#   export FALKORDB_ENDPOINT="falkor://127.0.0.1:6379"
+#   cargo run --release -- --config pagila_to_falkordb.yaml
+
+postgres:
+  url: "postgresql://localhost:5432/pagila_falkordb"
+  fetch_batch_size: 10000       # optional paging for large incremental loads
+  query_timeout_ms: 60000       # per-session statement_timeout
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "pagila_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "pagila_state.json"
+
+mappings:
+  # Countries
+  - type: node
+    name: countries
+    source:
+      table: "public.country"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    labels: ["Country"]
+    key:
+      column: "country_id"
+      property: "id"
+    properties:
+      name: { column: "country" }
+
+  # Cities
+  - type: node
+    name: cities
+    source:
+      table: "public.city"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    labels: ["City"]
+    key:
+      column: "city_id"
+      property: "id"
+    properties:
+      name: { column: "city" }
+
+  # Customers
+  - type: node
+    name: customers
+    source:
+      table: "public.customer"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "id"
+    properties:
+      first_name:  { column: "first_name" }
+      last_name:   { column: "last_name" }
+      email:       { column: "email" }
+      active_bool: { column: "activebool" }
+      create_date: { column: "create_date" }
+
+  # Films
+  - type: node
+    name: films
+    source:
+      table: "public.film"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    labels: ["Film"]
+    key:
+      column: "film_id"
+      property: "id"
+    properties:
+      title:        { column: "title" }
+      description:  { column: "description" }
+      release_year: { column: "release_year" }
+      length:       { column: "length" }
+      rating:       { column: "rating" }
+
+  # Categories
+  - type: node
+    name: categories
+    source:
+      table: "public.category"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    labels: ["Category"]
+    key:
+      column: "category_id"
+      property: "id"
+    properties:
+      name: { column: "name" }
+
+  # City -> Country edges
+  - type: edge
+    name: city_in_country
+    source:
+      table: "public.city"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    relationship: "IN_COUNTRY"
+    direction: out   # (:City)-[:IN_COUNTRY]->(:Country)
+    from:
+      node_mapping: cities
+      match_on:
+        - column: "city_id"
+          property: "id"
+    to:
+      node_mapping: countries
+      match_on:
+        - column: "country_id"
+          property: "id"
+    properties: {}
+
+  # Customer -> City edges (via address)
+  - type: edge
+    name: customer_lives_in_city
+    source:
+      select: |
+        SELECT
+          c.customer_id,
+          ci.city_id,
+          c.last_update AS last_update
+        FROM public.customer c
+        JOIN public.address a ON c.address_id = a.address_id
+        JOIN public.city ci ON a.city_id = ci.city_id
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    relationship: "LIVES_IN"
+    direction: out   # (:Customer)-[:LIVES_IN]->(:City)
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: cities
+      match_on:
+        - column: "city_id"
+          property: "id"
+    properties: {}
+
+  # Film -> Category edges
+  - type: edge
+    name: film_in_category
+    source:
+      table: "public.film_category"
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    relationship: "IN_CATEGORY"
+    direction: out   # (:Film)-[:IN_CATEGORY]->(:Category)
+    from:
+      node_mapping: films
+      match_on:
+        - column: "film_id"
+          property: "id"
+    to:
+      node_mapping: categories
+      match_on:
+        - column: "category_id"
+          property: "id"
+    properties: {}
+
+  # Customer -> Film edges based on rentals
+  - type: edge
+    name: customer_rented_film
+    source:
+      select: |
+        SELECT
+          r.customer_id,
+          i.film_id,
+          r.rental_date AS rental_date,
+          r.last_update AS last_update
+        FROM public.rental r
+        JOIN public.inventory i ON r.inventory_id = i.inventory_id
+    mode: incremental
+    delta:
+      updated_at_column: "last_update"
+    relationship: "RENTED"
+    direction: out   # (:Customer)-[:RENTED]->(:Film)
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: films
+      match_on:
+        - column: "film_id"
+          property: "id"
+    properties:
+      rental_date: { column: "rental_date" }

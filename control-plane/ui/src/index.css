@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --secondary: 0 0% 90%;
+    --primary: 247 100% 70%;
+    --primary-foreground: 0 0% 100%;
+    --destructive: 0 100% 66%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 40 96% 53%;
+    --warning-foreground: 0 0% 10%;
+
+    --accent: var(--background);
+    --accent-foreground: var(--foreground);
+
+    --popover: var(--background);
+    --popover-foreground: var(--foreground);
+
+    --card: var(--background);
+    --card-foreground: var(--foreground);
+
+    --radius: 0.5rem;
+    --input: var(--background);
+
+    --muted: 0 0% 80%;
+    --muted-foreground: 0 0% 30%;
+    --border: 0 0% 40%;
+    --ring: var(--primary);
+  }
+
+  /* tailwind dark mode */
+  .dark {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 100%;
+    --secondary: 0 0% 14.1%;
+    --border: 0 0% 26%;
+    --muted: 0 0% 24.1%;
+    --muted-foreground: 0 0% 75%;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+  }
+
+  :focus-visible {
+    @apply outline-none;
+  }
+}
+
+@layer components {
+  .Gradient {
+    background: linear-gradient(90deg, #EC806C 0%, #B66EBD 43.41%, #7568F2 100%);
+  }
+
+  .Panel {
+    @apply bg-background border border-border rounded-lg;
+  }
+}
+
+/* Scrollbars like falkordb-browser */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 20px;
+  border: 6px solid transparent;
+  background-clip: content-box;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: hsl(0 0% 90%);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(0 0% 14.1%);
+}

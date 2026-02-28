@@ -1,0 +1,4 @@
+data/
+server/target/
+ui/node_modules/
+ui/dist/

@@ -1,0 +1,73 @@
+postgres:
+  # Either provide a full URL or discrete connection fields.
+  url: "$POSTGRES_URL"
+  # host: "localhost"
+  # port: 5432
+  # user: "loader"
+  # password: "$POSTGRES_PASSWORD"
+  # dbname: "source_db"
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "postgres_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "public.customers"
+      where: "active = true"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Customer"]
+    key:
+      column: "id"
+      property: "id"
+    properties:
+      email: { column: "email" }
+      name: { column: "name" }
+
+  - type: node
+    name: orders
+    source:
+      table: "public.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+    labels: ["Order"]
+    key:
+      column: "id"
+      property: "id"
+    properties:
+      total: { column: "total" }
+      status: { column: "status" }
+
+  - type: edge
+    name: customer_orders
+    source:
+      table: "public.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "id"
+          property: "id"
+    properties:
+      ordered_at: { column: "ordered_at" }

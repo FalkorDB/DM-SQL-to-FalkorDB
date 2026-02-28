@@ -1,0 +1,65 @@
+[advisories]
+# For this CLI tool, we explicitly acknowledge and ignore the Marvin Attack
+# advisory on the rsa crate for now. The Snowflake client pulls this in as a
+# transient dependency, and we are not using it in a context where attackers
+# can observe fine-grained timing information.
+ignore = [
+    "RUSTSEC-2023-0071", # Marvin Attack on rsa
+]
+
+[bans]
+# For this CLI tool we allow multiple versions and only warn on them, since
+# some transitive crates (http, hyper, rand, etc.) commonly appear in more
+# than one version.
+multiple-versions = "warn"
+skip = [
+    "wasi", 
+    "getrandom",
+    "windows-sys", 
+    "core-foundation", 
+    "security-framework", 
+    "windows-targets",
+    "windows_aarch64_gnullvm",
+    "windows_aarch64_msvc", 
+    "windows_i686_gnu",
+    "windows_i686_gnullvm",
+    "windows_i686_msvc",
+    "windows_x86_64_gnu",
+    "windows_x86_64_gnullvm",
+    "windows_x86_64_msvc"
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# Allow the FalkorDB client git source used by this project.
+allow-git = [
+    "https://github.com/FalkorDB/falkordb-rs.git",
+]
+
+[licenses]
+exceptions = [
+    { name = "ring", allow = ["LicenseRef-ring"] } # ring uses a specific BoringSSL license that does not match the standard text so requires allowing the specific hash
+]
+unused-allowed-license = "allow"
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0 WITH LLVM-exception",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "MIT",
+    "ISC",
+    "Unicode-3.0",
+    # Snowflake connector and related components may use CDLA-Permissive-2.0.
+    # This is acceptable for this CLI tool.
+    "CDLA-Permissive-2.0",
+]
+
+
+[[licenses.clarify]]
+name = "ring"
+expression = "LicenseRef-ring"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
