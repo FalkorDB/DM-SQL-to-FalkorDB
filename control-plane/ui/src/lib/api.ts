@@ -2,6 +2,7 @@ import type {
   ConfigRecord,
   ConfigStateInfo,
   CreateConfigRequest,
+  RunEvent,
   RunRecord,
   StartRunRequest,
   ToolManifest,
@@ -32,12 +33,20 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
 
+  const text = await res.text().catch(() => '')
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '')
     throw new Error(text || `HTTP ${res.status}`)
   }
 
-  return res.json() as Promise<T>
+  // Guard against SPA fallbacks / proxies returning HTML with 200.
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('application/json')) {
+    const snippet = text.slice(0, 200)
+    throw new Error(`Expected JSON but got content-type '${ct}'. Body starts with: ${snippet}`)
+  }
+
+  return JSON.parse(text) as T
 }
 
 export const api = {
@@ -78,6 +87,8 @@ export const api = {
       return apiFetch<RunRecord[]>(`/api/runs${qs}`)
     },
     get: (runId: string) => apiFetch<RunRecord>(`/api/runs/${runId}`),
+    logs: (runId: string, limit = 2000) =>
+      apiFetch<RunEvent[]>(`/api/runs/${runId}/logs?limit=${limit}`),
     start: (req: StartRunRequest) =>
       apiFetch<RunRecord>('/api/runs', {
         method: 'POST',

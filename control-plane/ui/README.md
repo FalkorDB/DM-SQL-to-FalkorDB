@@ -11,6 +11,7 @@ This is the web UI for the control plane (see `../server`). It’s a Vite + Reac
   - Load config from a local `.yaml`/`.yml`/`.json` file
 - Runs management (start/stop, history)
 - Live log streaming (SSE)
+- View run logs for completed runs (persisted)
 
 ## Development
 

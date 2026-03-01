@@ -8,6 +8,8 @@ export default function RunDetailPage() {
   const { runId } = useParams()
   const [run, setRun] = useState<RunRecord | null>(null)
   const [events, setEvents] = useState<RunEvent[]>([])
+  const [logsLoaded, setLogsLoaded] = useState(false)
+  const [logsError, setLogsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stopping, setStopping] = useState(false)
 
@@ -20,6 +22,25 @@ export default function RunDetailPage() {
       .get(runId)
       .then(setRun)
       .catch((e) => setError(String(e)))
+  }, [runId])
+
+  useEffect(() => {
+    if (!runId) return
+
+    setLogsLoaded(false)
+    setLogsError(null)
+    setEvents([])
+
+    api.runs
+      .logs(runId, 2000)
+      .then((loaded) => {
+        setEvents((prev) => (prev.length ? [...loaded, ...prev] : loaded))
+      })
+      .catch((e) => {
+        // Non-fatal: the live SSE stream may still work.
+        setLogsError(String(e))
+      })
+      .finally(() => setLogsLoaded(true))
   }, [runId])
 
   useEffect(() => {
@@ -124,8 +145,14 @@ export default function RunDetailPage() {
 
       <section className="Panel p-4">
         <div className="font-semibold mb-2">Logs</div>
+        {logsError ? (
+          <div className="text-xs text-destructive mb-2">{logsError}</div>
+        ) : null}
         <div className="h-[520px] overflow-auto rounded-md border border-border bg-background p-3 font-mono text-xs">
-          {lines.length === 0 ? (
+          {!logsLoaded ? (
+            <div className="text-foreground/60">(loading logs…)</div>
+          ) : null}
+          {logsLoaded && lines.length === 0 ? (
             <div className="text-foreground/60">(no logs yet)</div>
           ) : null}
           {lines.map((l, idx) => (

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -83,6 +83,12 @@ impl RunManager {
 #[derive(Deserialize)]
 pub struct RunListQuery {
     pub tool_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RunLogsQuery {
+    /// Return at most the last N log lines. Defaults to 2000.
+    pub limit: Option<usize>,
 }
 
 pub async fn list_runs(
@@ -395,6 +401,63 @@ pub async fn stop_run(
         .await;
 
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+pub async fn run_logs(
+    State(state): State<AppState>,
+    AxumPath(run_id): AxumPath<Uuid>,
+    Query(q): Query<RunLogsQuery>,
+) -> ApiResult<Json<Vec<RunEvent>>> {
+    // Default to something sane and cap to avoid huge payloads.
+    let limit = q.limit.unwrap_or(2000).clamp(1, 10_000);
+
+    // Log file path is stable across process restarts.
+    let log_path = state
+        .data_dir
+        .join("runs")
+        .join(run_id.to_string())
+        .join("run.log");
+
+    let f = match tokio::fs::File::open(&log_path).await {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Json(vec![]));
+        }
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed reading logs: {e}"),
+            ));
+        }
+    };
+
+    let mut buf: VecDeque<RunEvent> = VecDeque::with_capacity(limit.min(2048));
+    let mut lines = BufReader::new(f).lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        let (stream, msg) = parse_persisted_log_line(&line);
+        let evt = RunEvent::Log {
+            stream: stream.to_string(),
+            line: msg.to_string(),
+        };
+
+        if buf.len() == limit {
+            buf.pop_front();
+        }
+        buf.push_back(evt);
+    }
+
+    Ok(Json(buf.into_iter().collect()))
+}
+
+fn parse_persisted_log_line(line: &str) -> (&str, &str) {
+    // Persisted format from append_log_line(): "[stdout] hello".
+    if let Some(rest) = line.strip_prefix('[') {
+        if let Some((stream, msg)) = rest.split_once("] ") {
+            return (stream, msg);
+        }
+    }
+    ("unknown", line)
 }
 
 pub async fn run_events_sse(

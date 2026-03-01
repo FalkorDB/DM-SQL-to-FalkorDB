@@ -76,6 +76,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
   - Create/edit per-tool configs (YAML or JSON) with a syntax-highlighted editor
   - Start runs (one-shot or daemon) and stop running jobs
   - Stream logs live (SSE) and keep run history (SQLite)
+  - View run log output after the fact (persisted per-run log file)
   - Inspect and clear file-backed incremental state (watermarks) per config
 
 Quick start (server):
@@ -125,6 +126,7 @@ Selected API endpoints:
 - `GET /api/runs`, `POST /api/runs`
 - `GET /api/runs/:run_id`, `POST /api/runs/:run_id/stop`
 - `GET /api/runs/:run_id/events` (SSE)
+- `GET /api/runs/:run_id/logs` (persisted log lines for viewing past runs)
 
 Adding a new tool to the control plane:
 

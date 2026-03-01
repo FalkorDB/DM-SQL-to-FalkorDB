@@ -96,7 +96,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/runs", get(runs::list_runs).post(runs::start_run))
         .route("/runs/:run_id", get(runs::get_run))
         .route("/runs/:run_id/stop", post(runs::stop_run))
-        .route("/runs/:run_id/events", get(runs::run_events_sse));
+        .route("/runs/:run_id/events", get(runs::run_events_sse))
+        .route("/runs/:run_id/logs", get(runs::run_logs));
 
     let api = Router::new()
         .nest("/api", api_routes)
