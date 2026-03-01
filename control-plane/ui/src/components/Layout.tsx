@@ -22,13 +22,11 @@ function NavItem({ to, label }: { to: string; label: string }) {
 }
 
 export default function Layout() {
-  const [theme, setTheme] = useState<Theme>('light')
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
 
   useEffect(() => {
-    const t = getInitialTheme()
-    setTheme(t)
-    applyTheme(t)
-  }, [])
+    applyTheme(theme)
+  }, [theme])
 
   function toggleTheme() {
     const next: Theme = theme === 'dark' ? 'light' : 'dark'

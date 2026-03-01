@@ -1,8 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+
+import CodeMirror from '@uiw/react-codemirror'
+import { json } from '@codemirror/lang-json'
+import { yaml } from '@codemirror/lang-yaml'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { EditorView, placeholder } from '@codemirror/view'
 
 import { api } from '../lib/api'
 import type { ToolSummary } from '../lib/types'
+
+type ConfigSyntax = 'auto' | 'yaml' | 'json'
+
+function inferSyntax(text: string): Exclude<ConfigSyntax, 'auto'> {
+  const t = text.trim()
+  if (!t) return 'yaml'
+
+  const first = t[0]
+  // Cheap fast-path: JSON is common and starts with one of these.
+  if (first === '{' || first === '[' || '"0123456789tfn-'.includes(first)) {
+    try {
+      JSON.parse(t)
+      return 'json'
+    } catch {
+      // ignore
+    }
+  }
+
+  return 'yaml'
+}
 
 export default function ConfigEditorPage() {
   const { configId } = useParams()
@@ -15,8 +41,13 @@ export default function ConfigEditorPage() {
   const [name, setName] = useState('')
   const [toolId, setToolId] = useState(preToolId)
   const [content, setContent] = useState('')
+  const [syntax, setSyntax] = useState<ConfigSyntax>('auto')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains('dark'),
+  )
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -42,9 +73,21 @@ export default function ConfigEditorPage() {
         setName(cfg.name)
         setToolId(cfg.tool_id)
         setContent(cfg.content)
+        setSyntax('auto')
       })
       .catch((e) => setError(String(e)))
   }, [configId, isNew])
+
+  useEffect(() => {
+    const root = document.documentElement
+
+    const obs = new MutationObserver(() => {
+      setIsDark(root.classList.contains('dark'))
+    })
+
+    obs.observe(root, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [])
 
   const title = isNew ? 'New config' : 'Edit config'
 
@@ -60,6 +103,10 @@ export default function ConfigEditorPage() {
     try {
       const text = await file.text()
       setContent(text)
+
+      if (ext === 'json') setSyntax('json')
+      else if (ext === 'yaml' || ext === 'yml') setSyntax('yaml')
+      else setSyntax('auto')
 
       if (isNew && name.trim() === '') {
         // Use the filename (without extension) as a reasonable default.
@@ -92,6 +139,26 @@ export default function ConfigEditorPage() {
       setBusy(false)
     }
   }
+
+  const effectiveSyntax = syntax === 'auto' ? inferSyntax(content) : syntax
+
+  const editorExtensions = useMemo(
+    () => [
+      effectiveSyntax === 'json' ? json() : yaml(),
+      EditorView.lineWrapping,
+      placeholder('paste YAML/JSON here'),
+      EditorView.theme({
+        '&': {
+          fontSize: '12px',
+        },
+        '.cm-content': {
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        },
+      }),
+    ],
+    [effectiveSyntax],
+  )
 
   if (error) return <div className="text-destructive">{error}</div>
   if (!tools) return <div className="text-foreground/70">Loading…</div>
@@ -172,13 +239,34 @@ export default function ConfigEditorPage() {
         </label>
 
         <label className="block text-sm">
-          <div className="text-foreground/70 mb-1">Config (YAML or JSON)</div>
-          <textarea
-            className="w-full h-[420px] font-mono text-xs bg-background border border-border rounded-md px-3 py-2"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="paste YAML/JSON here"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-foreground/70">Config</div>
+            <select
+              className="bg-background border border-border rounded-md px-2 py-1 text-xs"
+              value={syntax}
+              onChange={(e) => setSyntax(e.target.value as ConfigSyntax)}
+              title="Syntax highlighting"
+            >
+              <option value="auto">Auto</option>
+              <option value="yaml">YAML</option>
+              <option value="json">JSON</option>
+            </select>
+          </div>
+
+          <div className="border border-border rounded-md overflow-hidden">
+            <CodeMirror
+              value={content}
+              height="420px"
+              theme={isDark ? oneDark : undefined}
+              extensions={editorExtensions}
+              onChange={(value) => setContent(value)}
+              basicSetup={{
+                lineNumbers: true,
+                highlightActiveLine: false,
+                highlightActiveLineGutter: false,
+              }}
+            />
+          </div>
         </label>
       </div>
     </div>
