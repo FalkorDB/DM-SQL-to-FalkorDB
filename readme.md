@@ -73,7 +73,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 - Location: `control-plane/` (`control-plane/server` + `control-plane/ui`)
 - What it does: Runs alongside the loaders and provides a web UI + REST API to:
   - Discover tools by scanning the repo for `tool.manifest.json`
-  - Create/edit per-tool configs (YAML or JSON)
+  - Create/edit per-tool configs (YAML or JSON) with a syntax-highlighted editor
   - Start runs (one-shot or daemon) and stop running jobs
   - Stream logs live (SSE) and keep run history (SQLite)
   - Inspect and clear file-backed incremental state (watermarks) per config
@@ -109,6 +109,7 @@ Configuration:
 
 Notes:
 
+- The config editor supports YAML/JSON syntax highlighting (Auto/YAML/JSON selector).
 - The UI has an "API key" button that stores the key in browser localStorage.
 - The log stream endpoint uses Server-Sent Events. Since `EventSource` can’t set headers, the UI falls back to `?api_key=<token>` for SSE when an API key is configured.
 - Runtime data lives under `CONTROL_PLANE_DATA_DIR` (by default `control-plane/data/`), including a SQLite DB (`control-plane.sqlite`) and per-run artifacts/logs under `runs/<run_id>/`.
