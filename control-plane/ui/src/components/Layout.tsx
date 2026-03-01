@@ -54,6 +54,26 @@ export default function Layout() {
         <div className="Gradient h-1" />
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
+            <a
+              href="https://www.falkordb.com"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center"
+              aria-label="FalkorDB website"
+              title="FalkorDB"
+            >
+              <img
+                src="/icons/F-light.svg"
+                alt="FalkorDB"
+                className="h-7 w-7 dark:hidden"
+              />
+              <img
+                src="/icons/F-dark.svg"
+                alt="FalkorDB"
+                className="hidden h-7 w-7 dark:block"
+              />
+            </a>
+
             <Link to="/" className="font-semibold tracking-tight">
               FalkorDB Migrate Control Plane
             </Link>
