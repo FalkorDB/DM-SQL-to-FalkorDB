@@ -75,7 +75,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
   - Discover tools by scanning the repo for `tool.manifest.json`
   - Create/edit per-tool configs (YAML or JSON) with a syntax-highlighted editor
   - Start runs (one-shot or daemon) and stop running jobs
-  - Auto-configure metrics ports for metrics-capable tools when launching runs
+  - Auto-configure internal metrics collector ports for metrics-capable tools when launching runs
   - Stream logs live (SSE) and keep run history (SQLite)
   - View run log output after the fact (persisted per-run log file)
   - Inspect and clear file-backed incremental state (watermarks) per config
@@ -117,7 +117,7 @@ Notes:
 - The log stream endpoint uses Server-Sent Events. Since `EventSource` can’t set headers, the UI falls back to `?api_key=<token>` for SSE when an API key is configured.
 - Runtime data lives under `CONTROL_PLANE_DATA_DIR` (by default `control-plane/data/`), including a SQLite DB (`control-plane.sqlite`) and per-run artifacts/logs under `runs/<run_id>/`.
 - Runs are executed locally on the machine running the control plane server (it spawns the underlying CLI tools).
-- Metrics endpoints are per tool and can use different default ports (for example `9991`, `9992`, etc.).
+- Metrics endpoints/ports are internal collector settings from each tool manifest and are not shown in the Metrics UI.
 
 Selected API endpoints:
 
@@ -146,10 +146,11 @@ The control plane uses this in two places:
 2. **Metrics collection + persistence**: while a run is active, the server polls the raw endpoint, filters samples by `metricPrefix`, groups per-mapping samples by `mappingLabel` (default `mapping`), and stores snapshots in SQLite.
 
 `/api/metrics` and `/api/metrics/:tool_id` now serve the latest persisted snapshot, so metrics remain available even after tool processes stop.
+The Metrics UI reads these persisted snapshots and does not display raw scrape endpoint/port details.
 
 `metrics` fields:
 
-- `endpoint`: HTTP endpoint to scrape (for example `http://127.0.0.1:9993/`)
+- `endpoint`: HTTP endpoint to scrape (internal collector setting, not shown in UI; for example `http://127.0.0.1:9993/`)
 - `format`: currently `prometheus_text`
 - `metricPrefix`: prefix used to match this tool’s metric names
 - `mappingLabel`: label key used for per-mapping metrics
@@ -194,8 +195,9 @@ Minimal example:
 ## Metrics exposed by each tool
 
 All current loaders expose the same metric shape with tool-specific prefixes.
+Default scrape endpoints are configured per tool manifest for control-plane collection and are not displayed in the UI.
 
-### ClickHouse → FalkorDB (`clickhouse_to_falkordb_`, default endpoint `http://127.0.0.1:9991/`)
+### ClickHouse → FalkorDB (`clickhouse_to_falkordb_`)
 
 - `clickhouse_to_falkordb_runs`
 - `clickhouse_to_falkordb_failed_runs`
@@ -208,7 +210,7 @@ All current loaders expose the same metric shape with tool-specific prefixes.
 - `clickhouse_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `clickhouse_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
-### Snowflake → FalkorDB (`snowflake_to_falkordb_`, default endpoint `http://127.0.0.1:9992/`)
+### Snowflake → FalkorDB (`snowflake_to_falkordb_`)
 
 - `snowflake_to_falkordb_runs`
 - `snowflake_to_falkordb_failed_runs`
@@ -221,7 +223,7 @@ All current loaders expose the same metric shape with tool-specific prefixes.
 - `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
-### PostgreSQL → FalkorDB (`postgres_to_falkordb_`, default endpoint `http://127.0.0.1:9993/`)
+### PostgreSQL → FalkorDB (`postgres_to_falkordb_`)
 
 - `postgres_to_falkordb_runs`
 - `postgres_to_falkordb_failed_runs`
@@ -234,7 +236,7 @@ All current loaders expose the same metric shape with tool-specific prefixes.
 - `postgres_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `postgres_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
-### Databricks → FalkorDB (`databricks_to_falkordb_`, default endpoint `http://127.0.0.1:9994/`)
+### Databricks → FalkorDB (`databricks_to_falkordb_`)
 
 - `databricks_to_falkordb_runs`
 - `databricks_to_falkordb_failed_runs`
