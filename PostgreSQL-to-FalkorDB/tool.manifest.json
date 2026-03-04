@@ -12,7 +12,7 @@
     "supports_daemon": true,
     "supports_purge_graph": false,
     "supports_purge_mapping": false,
-    "supports_metrics": false
+    "supports_metrics": true
   },
   "config": {
     "fileExtensions": [".yaml", ".yml", ".json"],
@@ -20,5 +20,11 @@
       "PostgreSQL-to-FalkorDB/postgres-to-falkordb/example.config.yaml",
       "PostgreSQL-to-FalkorDB/postgres-to-falkordb/pagila_to_falkordb.yaml"
     ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9993/",
+    "format": "prometheus_text",
+    "metricPrefix": "postgres_to_falkordb_",
+    "mappingLabel": "mapping"
   }
 }

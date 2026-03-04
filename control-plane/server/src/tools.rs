@@ -22,6 +22,8 @@ pub struct ToolManifest {
     pub executable: ExecutableSpec,
     pub capabilities: ToolCapabilities,
     pub config: ToolConfigSpec,
+    #[serde(default)]
+    pub metrics: Option<ToolMetricsSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +51,25 @@ pub struct ToolConfigSpec {
     #[serde(rename = "fileExtensions")]
     pub file_extensions: Vec<String>,
     pub examples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolMetricsSpec {
+    pub endpoint: String,
+    #[serde(default = "default_metrics_format")]
+    pub format: String,
+    #[serde(rename = "metricPrefix")]
+    pub metric_prefix: Option<String>,
+    #[serde(rename = "mappingLabel", default = "default_mapping_label")]
+    pub mapping_label: String,
+}
+
+fn default_metrics_format() -> String {
+    "prometheus_text".to_string()
+}
+
+fn default_mapping_label() -> String {
+    "mapping".to_string()
 }
 
 #[derive(Debug, Clone)]

@@ -12,6 +12,8 @@ This is the web UI for the control plane (see `../server`). It’s a Vite + Reac
 - Runs management (start/stop, history)
 - Live log streaming (SSE)
 - View run logs for completed runs (persisted)
+- Metrics dashboard (overall + per-mapping counters per tool, from persisted snapshots)
+- Metrics API integration (`/api/metrics` and `/api/metrics/:tool_id`)
 
 ## Development
 

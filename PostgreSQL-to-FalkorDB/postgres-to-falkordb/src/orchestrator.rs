@@ -1,10 +1,11 @@
 use std::collections::HashSet;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 
 use crate::config::{Config, EntityMapping};
 use crate::mapping::{map_rows_to_edges, map_rows_to_nodes};
+use crate::metrics::METRICS;
 use crate::sink::MappedNode;
 use crate::sink_async::{
     connect_falkordb_async, delete_edges_batch_async, delete_nodes_batch_async,
@@ -130,6 +131,7 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
     let mut graph = connect_falkordb_async(&cfg.falkordb).await?;
 
     let mut watermarks = load_watermarks(cfg)?;
+    METRICS.inc_runs();
 
     // Ensure we have indexes on node key properties before writing data.
     ensure_node_indexes(&mut graph, &cfg.mappings).await?;
@@ -140,167 +142,191 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
         match mapping {
             EntityMapping::Node(node_cfg) => {
                 tracing::info!(mapping = %node_cfg.common.name, "Processing node mapping");
+                METRICS.inc_mapping_run(&node_cfg.common.name);
+                let node_result: Result<()> = async {
+                    let watermark = watermarks.get(&node_cfg.common.name).map(|s| s.as_str());
 
-                let watermark = watermarks.get(&node_cfg.common.name).map(|s| s.as_str());
-
-                // If this is an incremental mapping with initial_full_load = false and
-                // no existing watermark, skip the initial full load and start tracking
-                // from "now".
-                if let Some(delta) = &node_cfg.common.delta {
-                    if matches!(node_cfg.common.mode, crate::config::Mode::Incremental)
-                        && watermark.is_none()
-                        && delta.initial_full_load == Some(false)
-                    {
-                        let now = Utc::now().to_rfc3339();
-                        tracing::info!(
-                            mapping = %node_cfg.common.name,
-                            watermark = %now,
-                            "Skipping initial full load and seeding watermark",
-                        );
-                        watermarks.insert(node_cfg.common.name.clone(), now);
-                        save_watermarks(cfg, &watermarks)?;
-                        continue;
+                    // If this is an incremental mapping with initial_full_load = false and
+                    // no existing watermark, skip the initial full load and start tracking
+                    // from "now".
+                    if let Some(delta) = &node_cfg.common.delta {
+                        if matches!(node_cfg.common.mode, crate::config::Mode::Incremental)
+                            && watermark.is_none()
+                            && delta.initial_full_load == Some(false)
+                        {
+                            let now = Utc::now().to_rfc3339();
+                            tracing::info!(
+                                mapping = %node_cfg.common.name,
+                                watermark = %now,
+                                "Skipping initial full load and seeding watermark",
+                            );
+                            watermarks.insert(node_cfg.common.name.clone(), now);
+                            save_watermarks(cfg, &watermarks)?;
+                            return Ok(());
+                        }
                     }
-                }
 
-                let rows = fetch_rows_for_mapping(cfg, &node_cfg.common, watermark).await?;
-                tracing::info!(mapping = %node_cfg.common.name, rows = rows.len(), "Fetched rows");
+                    let rows = fetch_rows_for_mapping(cfg, &node_cfg.common, watermark).await?;
+                    tracing::info!(mapping = %node_cfg.common.name, rows = rows.len(), "Fetched rows");
+                    METRICS.add_rows_fetched(rows.len() as u64);
+                    METRICS.add_mapping_rows_fetched(&node_cfg.common.name, rows.len() as u64);
 
-                let (active_rows, deleted_rows) = if let Some(delta) = &node_cfg.common.delta {
-                    partition_by_deleted(&rows, delta)
-                } else {
-                    (rows.clone(), Vec::new())
-                };
+                    let (active_rows, deleted_rows) = if let Some(delta) = &node_cfg.common.delta {
+                        partition_by_deleted(&rows, delta)
+                    } else {
+                        (rows.clone(), Vec::new())
+                    };
 
-                let nodes: Vec<MappedNode> = map_rows_to_nodes(&active_rows, node_cfg)?;
-                tracing::info!(mapping = %node_cfg.common.name, rows = nodes.len(), "Writing nodes");
-
-                let mut start = 0usize;
-                while start < nodes.len() {
-                    let end = (start + batch_size).min(nodes.len());
-                    let slice = &nodes[start..end];
-                    write_nodes_batch_async(&mut graph, node_cfg, slice).await?;
-                    start = end;
-                }
-
-                if !deleted_rows.is_empty() {
-                    let deleted_nodes: Vec<MappedNode> =
-                        map_rows_to_nodes(&deleted_rows, node_cfg)?;
-                    tracing::info!(
-                        mapping = %node_cfg.common.name,
-                        rows = deleted_nodes.len(),
-                        "Deleting soft-deleted nodes",
-                    );
+                    let nodes: Vec<MappedNode> = map_rows_to_nodes(&active_rows, node_cfg)?;
+                    tracing::info!(mapping = %node_cfg.common.name, rows = nodes.len(), "Writing nodes");
+                    METRICS.add_rows_written(nodes.len() as u64);
+                    METRICS.add_mapping_rows_written(&node_cfg.common.name, nodes.len() as u64);
 
                     let mut start = 0usize;
-                    while start < deleted_nodes.len() {
-                        let end = (start + batch_size).min(deleted_nodes.len());
-                        let slice = &deleted_nodes[start..end];
-                        delete_nodes_batch_async(&mut graph, node_cfg, slice).await?;
+                    while start < nodes.len() {
+                        let end = (start + batch_size).min(nodes.len());
+                        let slice = &nodes[start..end];
+                        write_nodes_batch_async(&mut graph, node_cfg, slice).await?;
                         start = end;
                     }
-                }
 
-                if let Some(delta) = &node_cfg.common.delta {
-                    if let Some(max_ts) = compute_max_watermark(&rows, &delta.updated_at_column) {
-                        watermarks.insert(node_cfg.common.name.clone(), max_ts);
-                        save_watermarks(cfg, &watermarks)?;
+                    if !deleted_rows.is_empty() {
+                        let deleted_nodes: Vec<MappedNode> =
+                            map_rows_to_nodes(&deleted_rows, node_cfg)?;
+                        METRICS.add_rows_deleted(deleted_nodes.len() as u64);
+                        METRICS.add_mapping_rows_deleted(
+                            &node_cfg.common.name,
+                            deleted_nodes.len() as u64,
+                        );
+                        tracing::info!(
+                            mapping = %node_cfg.common.name,
+                            rows = deleted_nodes.len(),
+                            "Deleting soft-deleted nodes",
+                        );
+
+                        let mut start = 0usize;
+                        while start < deleted_nodes.len() {
+                            let end = (start + batch_size).min(deleted_nodes.len());
+                            let slice = &deleted_nodes[start..end];
+                            delete_nodes_batch_async(&mut graph, node_cfg, slice).await?;
+                            start = end;
+                        }
                     }
+
+                    if let Some(delta) = &node_cfg.common.delta {
+                        if let Some(max_ts) =
+                            compute_max_watermark(&rows, &delta.updated_at_column)
+                        {
+                            watermarks.insert(node_cfg.common.name.clone(), max_ts);
+                            save_watermarks(cfg, &watermarks)?;
+                        }
+                    }
+
+                    Ok(())
+                }
+                .await;
+
+                if let Err(e) = node_result {
+                    METRICS.inc_mapping_failed_run(&node_cfg.common.name);
+                    return Err(e);
                 }
             }
             EntityMapping::Edge(edge_cfg) => {
                 tracing::info!(mapping = %edge_cfg.common.name, "Processing edge mapping");
+                METRICS.inc_mapping_run(&edge_cfg.common.name);
+                let edge_result: Result<()> = async {
+                    let watermark = watermarks.get(&edge_cfg.common.name).map(|s| s.as_str());
 
-                let watermark = watermarks.get(&edge_cfg.common.name).map(|s| s.as_str());
-
-                // If this is an incremental mapping with initial_full_load = false and
-                // no existing watermark, skip the initial full load and start tracking
-                // from "now".
-                if let Some(delta) = &edge_cfg.common.delta {
-                    if matches!(edge_cfg.common.mode, crate::config::Mode::Incremental)
-                        && watermark.is_none()
-                        && delta.initial_full_load == Some(false)
-                    {
-                        let now = Utc::now().to_rfc3339();
-                        tracing::info!(
-                            mapping = %edge_cfg.common.name,
-                            watermark = %now,
-                            "Skipping initial full load and seeding watermark",
-                        );
-                        watermarks.insert(edge_cfg.common.name.clone(), now);
-                        save_watermarks(cfg, &watermarks)?;
-                        continue;
+                    // If this is an incremental mapping with initial_full_load = false and
+                    // no existing watermark, skip the initial full load and start tracking
+                    // from "now".
+                    if let Some(delta) = &edge_cfg.common.delta {
+                        if matches!(edge_cfg.common.mode, crate::config::Mode::Incremental)
+                            && watermark.is_none()
+                            && delta.initial_full_load == Some(false)
+                        {
+                            let now = Utc::now().to_rfc3339();
+                            tracing::info!(
+                                mapping = %edge_cfg.common.name,
+                                watermark = %now,
+                                "Skipping initial full load and seeding watermark",
+                            );
+                            watermarks.insert(edge_cfg.common.name.clone(), now);
+                            save_watermarks(cfg, &watermarks)?;
+                            return Ok(());
+                        }
                     }
-                }
 
-                // Resolve endpoint labels from node mappings by name.
-                let from_node = cfg
-                    .mappings
-                    .iter()
-                    .find_map(|m| match m {
-                        EntityMapping::Node(n) if n.common.name == edge_cfg.from.node_mapping => {
-                            Some(n)
-                        }
-                        _ => None,
-                    })
-                    .expect("from.node_mapping not found");
-                let to_node = cfg
-                    .mappings
-                    .iter()
-                    .find_map(|m| match m {
-                        EntityMapping::Node(n) if n.common.name == edge_cfg.to.node_mapping => {
-                            Some(n)
-                        }
-                        _ => None,
-                    })
-                    .expect("to.node_mapping not found");
+                    // Resolve endpoint labels from node mappings by name.
+                    let from_node = cfg
+                        .mappings
+                        .iter()
+                        .find_map(|m| match m {
+                            EntityMapping::Node(n)
+                                if n.common.name == edge_cfg.from.node_mapping =>
+                            {
+                                Some(n)
+                            }
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Edge mapping '{}' refers to unknown from.node_mapping '{}'",
+                                edge_cfg.common.name,
+                                edge_cfg.from.node_mapping
+                            )
+                        })?;
+                    let to_node = cfg
+                        .mappings
+                        .iter()
+                        .find_map(|m| match m {
+                            EntityMapping::Node(n)
+                                if n.common.name == edge_cfg.to.node_mapping =>
+                            {
+                                Some(n)
+                            }
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Edge mapping '{}' refers to unknown to.node_mapping '{}'",
+                                edge_cfg.common.name,
+                                edge_cfg.to.node_mapping
+                            )
+                        })?;
 
-                let from_labels = edge_cfg
-                    .from
-                    .label_override
-                    .clone()
-                    .unwrap_or_else(|| from_node.labels.clone());
-                let to_labels = edge_cfg
-                    .to
-                    .label_override
-                    .clone()
-                    .unwrap_or_else(|| to_node.labels.clone());
+                    let from_labels = edge_cfg
+                        .from
+                        .label_override
+                        .clone()
+                        .unwrap_or_else(|| from_node.labels.clone());
+                    let to_labels = edge_cfg
+                        .to
+                        .label_override
+                        .clone()
+                        .unwrap_or_else(|| to_node.labels.clone());
 
-                let rows = fetch_rows_for_mapping(cfg, &edge_cfg.common, watermark).await?;
-                tracing::info!(mapping = %edge_cfg.common.name, rows = rows.len(), "Fetched rows");
+                    let rows = fetch_rows_for_mapping(cfg, &edge_cfg.common, watermark).await?;
+                    tracing::info!(mapping = %edge_cfg.common.name, rows = rows.len(), "Fetched rows");
+                    METRICS.add_rows_fetched(rows.len() as u64);
+                    METRICS.add_mapping_rows_fetched(&edge_cfg.common.name, rows.len() as u64);
 
-                let (active_rows, deleted_rows) = if let Some(delta) = &edge_cfg.common.delta {
-                    partition_by_deleted(&rows, delta)
-                } else {
-                    (rows.clone(), Vec::new())
-                };
+                    let (active_rows, deleted_rows) = if let Some(delta) = &edge_cfg.common.delta {
+                        partition_by_deleted(&rows, delta)
+                    } else {
+                        (rows.clone(), Vec::new())
+                    };
 
-                let edges: Vec<MappedEdge> = map_rows_to_edges(&active_rows, edge_cfg)?;
-                tracing::info!(mapping = %edge_cfg.common.name, rows = edges.len(), "Writing edges");
-
-                let mut start = 0usize;
-                while start < edges.len() {
-                    let end = (start + batch_size).min(edges.len());
-                    let slice = &edges[start..end];
-                    write_edges_batch_async(&mut graph, edge_cfg, slice, &from_labels, &to_labels)
-                        .await?;
-                    start = end;
-                }
-
-                if !deleted_rows.is_empty() {
-                    let deleted_edges: Vec<MappedEdge> =
-                        map_rows_to_edges(&deleted_rows, edge_cfg)?;
-                    tracing::info!(
-                        mapping = %edge_cfg.common.name,
-                        rows = deleted_edges.len(),
-                        "Deleting soft-deleted edges",
-                    );
+                    let edges: Vec<MappedEdge> = map_rows_to_edges(&active_rows, edge_cfg)?;
+                    tracing::info!(mapping = %edge_cfg.common.name, rows = edges.len(), "Writing edges");
+                    METRICS.add_rows_written(edges.len() as u64);
+                    METRICS.add_mapping_rows_written(&edge_cfg.common.name, edges.len() as u64);
 
                     let mut start = 0usize;
-                    while start < deleted_edges.len() {
-                        let end = (start + batch_size).min(deleted_edges.len());
-                        let slice = &deleted_edges[start..end];
-                        delete_edges_batch_async(
+                    while start < edges.len() {
+                        let end = (start + batch_size).min(edges.len());
+                        let slice = &edges[start..end];
+                        write_edges_batch_async(
                             &mut graph,
                             edge_cfg,
                             slice,
@@ -310,13 +336,53 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
                         .await?;
                         start = end;
                     }
-                }
 
-                if let Some(delta) = &edge_cfg.common.delta {
-                    if let Some(max_ts) = compute_max_watermark(&rows, &delta.updated_at_column) {
-                        watermarks.insert(edge_cfg.common.name.clone(), max_ts);
-                        save_watermarks(cfg, &watermarks)?;
+                    if !deleted_rows.is_empty() {
+                        let deleted_edges: Vec<MappedEdge> =
+                            map_rows_to_edges(&deleted_rows, edge_cfg)?;
+                        METRICS.add_rows_deleted(deleted_edges.len() as u64);
+                        METRICS.add_mapping_rows_deleted(
+                            &edge_cfg.common.name,
+                            deleted_edges.len() as u64,
+                        );
+                        tracing::info!(
+                            mapping = %edge_cfg.common.name,
+                            rows = deleted_edges.len(),
+                            "Deleting soft-deleted edges",
+                        );
+
+                        let mut start = 0usize;
+                        while start < deleted_edges.len() {
+                            let end = (start + batch_size).min(deleted_edges.len());
+                            let slice = &deleted_edges[start..end];
+                            delete_edges_batch_async(
+                                &mut graph,
+                                edge_cfg,
+                                slice,
+                                &from_labels,
+                                &to_labels,
+                            )
+                            .await?;
+                            start = end;
+                        }
                     }
+
+                    if let Some(delta) = &edge_cfg.common.delta {
+                        if let Some(max_ts) =
+                            compute_max_watermark(&rows, &delta.updated_at_column)
+                        {
+                            watermarks.insert(edge_cfg.common.name.clone(), max_ts);
+                            save_watermarks(cfg, &watermarks)?;
+                        }
+                    }
+
+                    Ok(())
+                }
+                .await;
+
+                if let Err(e) = edge_result {
+                    METRICS.inc_mapping_failed_run(&edge_cfg.common.name);
+                    return Err(e);
                 }
             }
         }
@@ -337,6 +403,7 @@ pub async fn run_daemon(cfg: &Config, interval_secs: u64) -> Result<()> {
         tracing::info!("Starting sync run");
         if let Err(e) = run_once(cfg).await {
             tracing::error!(error = %e, "Sync run failed");
+            METRICS.inc_failed_runs();
         }
     }
 }

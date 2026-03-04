@@ -22,5 +22,11 @@
       "Snowflake-to-FalkorDB/snowflake_stream_example.yaml",
       "Snowflake-to-FalkorDB/example.config.json"
     ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9992/",
+    "format": "prometheus_text",
+    "metricPrefix": "snowflake_to_falkordb_",
+    "mappingLabel": "mapping"
   }
 }

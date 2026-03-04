@@ -239,14 +239,31 @@ If `fetch_batch_size` is not set, or if the mapping uses `source.select` (custom
 ## Metrics and Monitoring
 
 A lightweight HTTP metrics server is started automatically on:
+- `0.0.0.0:9992` (default)
 
-- `0.0.0.0:9898`
+You can override the port per process:
+
+- CLI flag: `--metrics-port <port>`
+- Env var: `SNOWFLAKE_TO_FALKORDB_METRICS_PORT`
 
 Fetch metrics:
 
 ```bash
-curl http://localhost:9898/
+curl http://localhost:9992/
 ```
+
+Exposed metric names:
+
+- `snowflake_to_falkordb_runs`
+- `snowflake_to_falkordb_failed_runs`
+- `snowflake_to_falkordb_rows_fetched`
+- `snowflake_to_falkordb_rows_written`
+- `snowflake_to_falkordb_rows_deleted`
+- `snowflake_to_falkordb_mapping_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 Example output (Prometheus-style):
 
@@ -279,7 +296,7 @@ These metrics let you see, per mapping, how many rows were fetched, written, and
 
 ## Troubleshooting
 
-- Check metrics at `http://localhost:9898/` to see if a particular mapping is stuck (e.g. zero rows written or growing failed runs).
+- Check metrics at `http://localhost:9992/` (or your configured port) to see if a particular mapping is stuck (e.g. zero rows written or growing failed runs).
 - Enable debug logging:
 
 ```bash

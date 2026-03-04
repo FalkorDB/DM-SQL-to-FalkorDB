@@ -14,12 +14,15 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, Mutex};
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
+use crate::metrics::collect_tool_metrics;
 
 use crate::models::{
     ApiResult, RunEvent, RunMode, RunRecord, RunStatus, StartRunRequest,
 };
 use crate::models::{bad_request, not_found};
 use crate::models::AppState;
+use crate::store::Store;
+use crate::tools::Tool;
 
 #[derive(Clone)]
 pub struct RunManager {
@@ -192,7 +195,8 @@ pub async fn start_run(
     // Tool-specific CLI args (capability-driven, but flag names are currently per tool).
     // For now we assume:
     // - all tools: --config <path>
-    // - snowflake: --purge-graph, --purge-mapping, --daemon, --interval-secs
+    // - metrics-capable tools: --metrics-port
+    // - snowflake/clickhouse: --purge-graph, --purge-mapping, --daemon, --interval-secs
     // - postgres:  --daemon, --interval-secs
     tool_args.push("--".to_string());
     tool_args.push("--config".to_string());
@@ -211,6 +215,13 @@ pub async fn start_run(
         let interval = req.daemon_interval_secs.unwrap_or(60);
         tool_args.push("--interval-secs".to_string());
         tool_args.push(interval.to_string());
+    }
+
+    if tool.manifest.capabilities.supports_metrics {
+        if let Some(metrics_port) = metrics_port_for_tool(tool) {
+            tool_args.push("--metrics-port".to_string());
+            tool_args.push(metrics_port.to_string());
+        }
     }
 
     let (tx, _rx) = broadcast::channel::<RunEvent>(1024);
@@ -260,6 +271,10 @@ pub async fn start_run(
     }
     if let Some(stderr) = stderr {
         spawn_log_reader(run_id, "stderr", stderr, tx.clone(), log_path.clone());
+    }
+
+    if tool.manifest.capabilities.supports_metrics {
+        spawn_metrics_poller(run_id, tool.clone(), state.runs.clone(), state.store.clone());
     }
 
     // Completion task: monitor the process with try_wait so we don't hold mutex guards across .await.
@@ -458,6 +473,70 @@ fn parse_persisted_log_line(line: &str) -> (&str, &str) {
         }
     }
     ("unknown", line)
+}
+
+fn spawn_metrics_poller(run_id: Uuid, tool: Tool, runs: RunManager, store: Store) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+
+        loop {
+            ticker.tick().await;
+
+            let is_running = {
+                let guard = runs.inner.lock().await;
+                matches!(guard.get(&run_id).map(|h| &h.status), Some(RunStatus::Running))
+            };
+
+            if !is_running {
+                return;
+            }
+
+            let view = collect_tool_metrics(&tool).await;
+            if view.error.is_some() {
+                continue;
+            }
+
+            let view_json = match serde_json::to_string(&view) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(
+                        run_id = %run_id,
+                        tool_id = %tool.manifest.id,
+                        error = %e,
+                        "Failed to serialize metrics snapshot",
+                    );
+                    continue;
+                }
+            };
+
+            if let Err(e) = store
+                .insert_tool_metrics_snapshot(
+                    &tool.manifest.id,
+                    Some(run_id),
+                    &view.fetched_at,
+                    &view_json,
+                )
+                .await
+            {
+                tracing::warn!(
+                    run_id = %run_id,
+                    tool_id = %tool.manifest.id,
+                    error = %e,
+                    "Failed to persist metrics snapshot",
+                );
+            }
+        }
+    });
+}
+
+fn metrics_port_for_tool(tool: &crate::tools::Tool) -> Option<u16> {
+    let endpoint = tool.manifest.metrics.as_ref()?.endpoint.trim();
+    if endpoint.is_empty() {
+        return None;
+    }
+
+    let parsed = reqwest::Url::parse(endpoint).ok()?;
+    parsed.port_or_known_default()
 }
 
 pub async fn run_events_sse(

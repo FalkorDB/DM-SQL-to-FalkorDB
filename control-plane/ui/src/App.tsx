@@ -8,6 +8,7 @@ import ConfigsPage from './pages/ConfigsPage'
 import ConfigEditorPage from './pages/ConfigEditorPage'
 import RunsPage from './pages/RunsPage'
 import RunDetailPage from './pages/RunDetailPage'
+import MetricsPage from './pages/MetricsPage'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/configs/:configId" element={<ConfigEditorPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunDetailPage />} />
+        <Route path="/metrics" element={<MetricsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

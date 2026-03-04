@@ -5,6 +5,7 @@ import type {
   RunEvent,
   RunRecord,
   StartRunRequest,
+  ToolMetricsView,
   ToolManifest,
   ToolSummary,
   UpdateConfigRequest,
@@ -99,5 +100,9 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({}),
       }),
+  },
+  metrics: {
+    list: () => apiFetch<ToolMetricsView[]>('/api/metrics'),
+    get: (toolId: string) => apiFetch<ToolMetricsView>(`/api/metrics/${toolId}`),
   },
 }

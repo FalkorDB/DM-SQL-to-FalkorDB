@@ -164,12 +164,20 @@ export default function ToolDetailPage() {
           <div className="text-xs text-foreground/50 mt-2">Working dir: {tool.workingDir}</div>
         </div>
 
-        <Link
-          to={`/configs/new?tool_id=${encodeURIComponent(tool.id)}`}
-          className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
-        >
-          New config
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/metrics?tool_id=${encodeURIComponent(tool.id)}`}
+            className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+          >
+            Metrics
+          </Link>
+          <Link
+            to={`/configs/new?tool_id=${encodeURIComponent(tool.id)}`}
+            className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+          >
+            New config
+          </Link>
+        </div>
       </div>
 
       <section className="Panel p-4 space-y-4">

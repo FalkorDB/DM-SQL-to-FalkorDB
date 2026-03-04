@@ -26,6 +26,12 @@ export default function HomePage() {
         >
           Runs
         </Link>
+        <Link
+          to="/metrics"
+          className="px-4 py-2 rounded-md text-sm border border-border hover:border-primary"
+        >
+          Metrics
+        </Link>
       </div>
     </div>
   )

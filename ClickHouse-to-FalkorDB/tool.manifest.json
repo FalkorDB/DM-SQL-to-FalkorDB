@@ -1,0 +1,31 @@
+{
+  "id": "clickhouse",
+  "displayName": "ClickHouse → FalkorDB",
+  "description": "Migrate and continuously sync structured data from ClickHouse into FalkorDB using declarative mappings.",
+  "workingDir": "ClickHouse-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "ClickHouse-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "ClickHouse-to-FalkorDB/clickhouse.event_table.yaml",
+      "ClickHouse-to-FalkorDB/clickhouse.incremental.yaml",
+      "ClickHouse-to-FalkorDB/example.file.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9991/",
+    "format": "prometheus_text",
+    "metricPrefix": "clickhouse_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}

@@ -23,6 +23,9 @@ The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB
   - Safe to stop and restart; sync resumes from the last watermark.
 - **Online / daemon mode**
   - Optional daemon mode that repeats syncs at a fixed interval to maintain one-way sync.
+- **Metrics**
+  - Prometheus-style metrics endpoint with global and per-mapping counters.
+  - Configurable metrics port (`--metrics-port` / `POSTGRES_TO_FALKORDB_METRICS_PORT`).
 
 ## Layout
 
@@ -271,6 +274,36 @@ Behavior:
 - Runs `run_once` every `interval-secs` seconds.
 - On each run, processes all mappings in order.
 - Maintains one-way sync by applying only new/updated rows since the last watermark.
+
+### Metrics and monitoring
+
+The tool starts a Prometheus-style metrics endpoint on:
+
+- `0.0.0.0:9993` (default)
+
+You can override the port:
+
+- CLI flag: `--metrics-port <port>`
+- Env var: `POSTGRES_TO_FALKORDB_METRICS_PORT`
+
+Fetch metrics:
+
+```bash
+curl http://localhost:9993/
+```
+
+Exposed metric names:
+
+- `postgres_to_falkordb_runs`
+- `postgres_to_falkordb_failed_runs`
+- `postgres_to_falkordb_rows_fetched`
+- `postgres_to_falkordb_rows_written`
+- `postgres_to_falkordb_rows_deleted`
+- `postgres_to_falkordb_mapping_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ## Operational notes
 

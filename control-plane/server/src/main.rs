@@ -1,4 +1,5 @@
 mod auth;
+mod metrics;
 mod models;
 mod runs;
 mod store;
@@ -83,6 +84,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(models::health))
         .route("/tools", get(tools::list_tools))
         .route("/tools/:tool_id", get(tools::get_tool))
+        .route("/metrics", get(metrics::list_tool_metrics))
+        .route("/metrics/:tool_id", get(metrics::get_tool_metrics))
         .route("/configs", get(store::list_configs).post(store::create_config))
         .route(
             "/configs/:config_id",

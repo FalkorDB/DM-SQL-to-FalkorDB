@@ -19,10 +19,9 @@ use crate::config::Config;
 use crate::metrics::serve_metrics;
 use crate::orchestrator::{run_daemon, run_once};
 
-/// CLI for phase 2+: supports multi-mapping, async writes, purge, and daemon mode.
 #[derive(Debug, Parser)]
-#[command(name = "snowflake-to-falkordb")]
-#[command(about = "Load tabular/Snowflake data into FalkorDB via UNWIND+MERGE", long_about = None)]
+#[command(name = "clickhouse-to-falkordb")]
+#[command(about = "Load ClickHouse/file data into FalkorDB via UNWIND+MERGE", long_about = None)]
 struct Cli {
     /// Path to JSON or YAML config file.
     #[arg(long, value_name = "PATH")]
@@ -45,7 +44,7 @@ struct Cli {
     interval_secs: u64,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(long, env = "SNOWFLAKE_TO_FALKORDB_METRICS_PORT", default_value_t = 9992)]
+    #[arg(long, env = "CLICKHOUSE_TO_FALKORDB_METRICS_PORT", default_value_t = 9991)]
     metrics_port: u16,
 }
 
@@ -56,7 +55,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::from_file(&cli.config)?;
 
-    // Start metrics server on 0.0.0.0:<metrics-port>
     let metrics_port = cli.metrics_port;
     tokio::spawn(async move {
         let addr = ([0, 0, 0, 0], metrics_port).into();

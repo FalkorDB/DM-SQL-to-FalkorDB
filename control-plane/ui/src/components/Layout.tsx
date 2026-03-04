@@ -79,6 +79,7 @@ export default function Layout() {
               <NavItem to="/tools" label="Tools" />
               <NavItem to="/configs" label="Configs" />
               <NavItem to="/runs" label="Runs" />
+              <NavItem to="/metrics" label="Metrics" />
             </nav>
           </div>
 

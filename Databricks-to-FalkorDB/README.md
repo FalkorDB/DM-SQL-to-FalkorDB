@@ -19,6 +19,9 @@ The design mirrors the Snowflake-to-FalkorDB loader: you describe how Databricks
 - **Persistent state**
   - File-backed state (`state.backend: file`) stores per-mapping watermarks between runs.
   - Safe to stop and restart; sync resumes from the last watermark.
+- **Metrics**
+  - Prometheus-style metrics endpoint with global and per-mapping counters.
+  - Configurable metrics port (`--metrics-port` / `DATABRICKS_TO_FALKORDB_METRICS_PORT`).
 
 ## Quick Start
 
@@ -99,6 +102,36 @@ The tool will:
    - Upsert active rows as nodes/edges.
    - Delete soft-deleted nodes/edges.
    - Update and persist the watermark.
+
+### Metrics and monitoring
+
+The tool starts a Prometheus-style metrics endpoint on:
+
+- `0.0.0.0:9994` (default)
+
+You can override the port:
+
+- CLI flag: `--metrics-port <port>`
+- Env var: `DATABRICKS_TO_FALKORDB_METRICS_PORT`
+
+Fetch metrics:
+
+```bash
+curl http://localhost:9994/
+```
+
+Exposed metric names:
+
+- `databricks_to_falkordb_runs`
+- `databricks_to_falkordb_failed_runs`
+- `databricks_to_falkordb_rows_fetched`
+- `databricks_to_falkordb_rows_written`
+- `databricks_to_falkordb_rows_deleted`
+- `databricks_to_falkordb_mapping_runs{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ## Concrete Databricks Table → Graph Example
 

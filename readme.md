@@ -75,9 +75,11 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
   - Discover tools by scanning the repo for `tool.manifest.json`
   - Create/edit per-tool configs (YAML or JSON) with a syntax-highlighted editor
   - Start runs (one-shot or daemon) and stop running jobs
+  - Auto-configure metrics ports for metrics-capable tools when launching runs
   - Stream logs live (SSE) and keep run history (SQLite)
   - View run log output after the fact (persisted per-run log file)
   - Inspect and clear file-backed incremental state (watermarks) per config
+  - View per-tool runtime metrics (including per-mapping counters where supported), persisted in the control-plane database
 
 Quick start (server):
 
@@ -115,6 +117,7 @@ Notes:
 - The log stream endpoint uses Server-Sent Events. Since `EventSource` can’t set headers, the UI falls back to `?api_key=<token>` for SSE when an API key is configured.
 - Runtime data lives under `CONTROL_PLANE_DATA_DIR` (by default `control-plane/data/`), including a SQLite DB (`control-plane.sqlite`) and per-run artifacts/logs under `runs/<run_id>/`.
 - Runs are executed locally on the machine running the control plane server (it spawns the underlying CLI tools).
+- Metrics endpoints are per tool and can use different default ports (for example `9991`, `9992`, etc.).
 
 Selected API endpoints:
 
@@ -127,6 +130,29 @@ Selected API endpoints:
 - `GET /api/runs/:run_id`, `POST /api/runs/:run_id/stop`
 - `GET /api/runs/:run_id/events` (SSE)
 - `GET /api/runs/:run_id/logs` (persisted log lines for viewing past runs)
+- `GET /api/metrics` (all tools metrics snapshot)
+- `GET /api/metrics/:tool_id` (single tool metrics snapshot)
+
+### Control plane metrics option (`tool.manifest.json`)
+
+For tools that expose runtime metrics, configure both:
+
+- `capabilities.supports_metrics: true`
+- a `metrics` section in the manifest
+
+The control plane uses this in two places:
+
+1. **Run start**: when a run is started, the server parses the port from `metrics.endpoint` and adds `--metrics-port <port>` to the tool invocation.
+2. **Metrics collection + persistence**: while a run is active, the server polls the raw endpoint, filters samples by `metricPrefix`, groups per-mapping samples by `mappingLabel` (default `mapping`), and stores snapshots in SQLite.
+
+`/api/metrics` and `/api/metrics/:tool_id` now serve the latest persisted snapshot, so metrics remain available even after tool processes stop.
+
+`metrics` fields:
+
+- `endpoint`: HTTP endpoint to scrape (for example `http://127.0.0.1:9993/`)
+- `format`: currently `prometheus_text`
+- `metricPrefix`: prefix used to match this tool’s metric names
+- `mappingLabel`: label key used for per-mapping metrics
 
 Adding a new tool to the control plane:
 
@@ -155,9 +181,71 @@ Minimal example:
   "config": {
     "fileExtensions": [".yaml", ".yml", ".json"],
     "examples": []
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9999/",
+    "format": "prometheus_text",
+    "metricPrefix": "my_tool_to_falkordb_",
+    "mappingLabel": "mapping"
   }
 }
 ```
+
+## Metrics exposed by each tool
+
+All current loaders expose the same metric shape with tool-specific prefixes.
+
+### ClickHouse → FalkorDB (`clickhouse_to_falkordb_`, default endpoint `http://127.0.0.1:9991/`)
+
+- `clickhouse_to_falkordb_runs`
+- `clickhouse_to_falkordb_failed_runs`
+- `clickhouse_to_falkordb_rows_fetched`
+- `clickhouse_to_falkordb_rows_written`
+- `clickhouse_to_falkordb_rows_deleted`
+- `clickhouse_to_falkordb_mapping_runs{mapping="<name>"}`
+- `clickhouse_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `clickhouse_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `clickhouse_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `clickhouse_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### Snowflake → FalkorDB (`snowflake_to_falkordb_`, default endpoint `http://127.0.0.1:9992/`)
+
+- `snowflake_to_falkordb_runs`
+- `snowflake_to_falkordb_failed_runs`
+- `snowflake_to_falkordb_rows_fetched`
+- `snowflake_to_falkordb_rows_written`
+- `snowflake_to_falkordb_rows_deleted`
+- `snowflake_to_falkordb_mapping_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### PostgreSQL → FalkorDB (`postgres_to_falkordb_`, default endpoint `http://127.0.0.1:9993/`)
+
+- `postgres_to_falkordb_runs`
+- `postgres_to_falkordb_failed_runs`
+- `postgres_to_falkordb_rows_fetched`
+- `postgres_to_falkordb_rows_written`
+- `postgres_to_falkordb_rows_deleted`
+- `postgres_to_falkordb_mapping_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### Databricks → FalkorDB (`databricks_to_falkordb_`, default endpoint `http://127.0.0.1:9994/`)
+
+- `databricks_to_falkordb_runs`
+- `databricks_to_falkordb_failed_runs`
+- `databricks_to_falkordb_rows_fetched`
+- `databricks_to_falkordb_rows_written`
+- `databricks_to_falkordb_rows_deleted`
+- `databricks_to_falkordb_mapping_runs{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ## Common concepts (applies to the Rust loaders)
 

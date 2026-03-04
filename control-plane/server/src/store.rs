@@ -22,6 +22,13 @@ pub struct Store {
     pool: SqlitePool,
 }
 
+#[derive(sqlx::FromRow)]
+pub struct ToolMetricsSnapshotRow {
+    pub run_id: Option<String>,
+    pub fetched_at: String,
+    pub view_json: String,
+}
+
 impl Store {
     pub async fn connect(db_path: &Path) -> anyhow::Result<Self> {
         let opts = SqliteConnectOptions::new()
@@ -209,6 +216,41 @@ impl Store {
         .await?;
 
         Ok(row.and_then(|r| r.try_into().ok()))
+    }
+
+    pub async fn insert_tool_metrics_snapshot(
+        &self,
+        tool_id: &str,
+        run_id: Option<Uuid>,
+        fetched_at: &str,
+        view_json: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO tool_metrics_snapshots (tool_id, run_id, fetched_at, view_json) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(tool_id)
+        .bind(run_id.map(|id| id.to_string()))
+        .bind(fetched_at)
+        .bind(view_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+
+    pub async fn get_latest_tool_metrics_snapshot(
+        &self,
+        tool_id: &str,
+    ) -> anyhow::Result<Option<ToolMetricsSnapshotRow>> {
+        let row = sqlx::query_as::<_, ToolMetricsSnapshotRow>(
+            "SELECT run_id, fetched_at, view_json FROM tool_metrics_snapshots WHERE tool_id = ?1 ORDER BY id DESC LIMIT 1",
+        )
+        .bind(tool_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row)
     }
 }
 

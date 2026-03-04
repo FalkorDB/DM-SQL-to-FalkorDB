@@ -83,3 +83,21 @@ export type RunEvent =
   | { type: 'state'; status: RunStatus }
   | { type: 'log'; stream: string; line: string }
   | { type: 'exit'; status: RunStatus; exit_code?: number | null; error?: string | null }
+
+export type ToolMetricsView = {
+  tool_id: string
+  display_name: string
+  supports_metrics: boolean
+  endpoint?: string | null
+  format?: string | null
+  metric_prefix?: string | null
+  mapping_label?: string | null
+  fetched_at: string
+  snapshot_timestamp?: string | null
+  snapshot_run_id?: string | null
+  snapshot_source?: string | null
+  overall: Record<string, number>
+  per_mapping: Record<string, Record<string, number>>
+  warnings: string[]
+  error?: string | null
+}
