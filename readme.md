@@ -49,42 +49,24 @@ cargo run --release -- --config path/to/config.yaml
 
 Most configs reference environment variables for secrets (for example `$DATABRICKS_TOKEN`).
 
-### Snowflake → FalkorDB
+### MariaDB → FalkorDB
 
-- Location: `Snowflake-to-FalkorDB/`
-- What it does: Migrates and continuously syncs structured data from Snowflake into FalkorDB (supports incremental watermarks, optional purge modes, and daemon mode).
-- Documentation: [Snowflake-to-FalkorDB/README.md](Snowflake-to-FalkorDB/README.md)
-
-Quick start (from the crate directory):
-
-```bash
-cd Snowflake-to-FalkorDB
-cargo build --release
-
-# Single run
-cargo run --release -- --config path/to/config.yaml
-
-# Continuous sync
-cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
-```
-
-### PostgreSQL → FalkorDB
-
-- Location: `PostgreSQL-to-FalkorDB/`
-- What it does: Migrates and continuously syncs data from PostgreSQL into FalkorDB (supports full or incremental mode; optional daemon mode).
-- Documentation: [PostgreSQL-to-FalkorDB/README.md](PostgreSQL-to-FalkorDB/README.md)
+- Location: `MariaDB-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
+- End-to-end sample: `MariaDB-to-FalkorDB/sample_data/` + `MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml`
 
 Quick start (from the crate directory):
 
 ```bash
-cd PostgreSQL-to-FalkorDB/postgres-to-falkordb
+cd MariaDB-to-FalkorDB
 cargo build --release
 
 # Single run
-cargo run --release -- --config example.config.yaml
+cargo run --release -- --config mariadb.incremental.yaml
 
 # Continuous sync
-cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
+cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-secs 60
 ```
 
 ### MySQL → FalkorDB
@@ -107,24 +89,42 @@ cargo run --release -- --config mysql.incremental.yaml
 cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
 ```
 
-### MariaDB → FalkorDB
+### PostgreSQL → FalkorDB
 
-- Location: `MariaDB-to-FalkorDB/`
-- What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
-- Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
-- End-to-end sample: `MariaDB-to-FalkorDB/sample_data/` + `MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml`
+- Location: `PostgreSQL-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from PostgreSQL into FalkorDB (supports full or incremental mode; optional daemon mode).
+- Documentation: [PostgreSQL-to-FalkorDB/README.md](PostgreSQL-to-FalkorDB/README.md)
 
 Quick start (from the crate directory):
 
 ```bash
-cd MariaDB-to-FalkorDB
+cd PostgreSQL-to-FalkorDB/postgres-to-falkordb
 cargo build --release
 
 # Single run
-cargo run --release -- --config mariadb.incremental.yaml
+cargo run --release -- --config example.config.yaml
 
 # Continuous sync
-cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-secs 60
+cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
+```
+
+### Snowflake → FalkorDB
+
+- Location: `Snowflake-to-FalkorDB/`
+- What it does: Migrates and continuously syncs structured data from Snowflake into FalkorDB (supports incremental watermarks, optional purge modes, and daemon mode).
+- Documentation: [Snowflake-to-FalkorDB/README.md](Snowflake-to-FalkorDB/README.md)
+
+Quick start (from the crate directory):
+
+```bash
+cd Snowflake-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config path/to/config.yaml
+
+# Continuous sync
+cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
 ```
 
 ### SQL Server → FalkorDB
@@ -273,9 +273,6 @@ Minimal example:
 
 ## Metrics exposed by each tool
 
-All current loaders expose the same metric shape with tool-specific prefixes.
-Default scrape endpoints are configured per tool manifest for control-plane collection and are not displayed in the UI.
-
 ### ClickHouse → FalkorDB (`clickhouse_to_falkordb_`)
 
 - `clickhouse_to_falkordb_runs`
@@ -288,32 +285,6 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `clickhouse_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `clickhouse_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `clickhouse_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
-
-### Snowflake → FalkorDB (`snowflake_to_falkordb_`)
-
-- `snowflake_to_falkordb_runs`
-- `snowflake_to_falkordb_failed_runs`
-- `snowflake_to_falkordb_rows_fetched`
-- `snowflake_to_falkordb_rows_written`
-- `snowflake_to_falkordb_rows_deleted`
-- `snowflake_to_falkordb_mapping_runs{mapping="<name>"}`
-- `snowflake_to_falkordb_mapping_failed_runs{mapping="<name>"}`
-- `snowflake_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
-- `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
-- `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
-
-### PostgreSQL → FalkorDB (`postgres_to_falkordb_`)
-
-- `postgres_to_falkordb_runs`
-- `postgres_to_falkordb_failed_runs`
-- `postgres_to_falkordb_rows_fetched`
-- `postgres_to_falkordb_rows_written`
-- `postgres_to_falkordb_rows_deleted`
-- `postgres_to_falkordb_mapping_runs{mapping="<name>"}`
-- `postgres_to_falkordb_mapping_failed_runs{mapping="<name>"}`
-- `postgres_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
-- `postgres_to_falkordb_mapping_rows_written{mapping="<name>"}`
-- `postgres_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ### Databricks → FalkorDB (`databricks_to_falkordb_`)
 
@@ -328,6 +299,19 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
+### MariaDB → FalkorDB (`mariadb_to_falkordb_`)
+
+- `mariadb_to_falkordb_runs`
+- `mariadb_to_falkordb_failed_runs`
+- `mariadb_to_falkordb_rows_fetched`
+- `mariadb_to_falkordb_rows_written`
+- `mariadb_to_falkordb_rows_deleted`
+- `mariadb_to_falkordb_mapping_runs{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
 ### MySQL → FalkorDB (`mysql_to_falkordb_`)
 
 - `mysql_to_falkordb_runs`
@@ -341,18 +325,31 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `mysql_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
-### MariaDB → FalkorDB (`mariadb_to_falkordb_`)
+### PostgreSQL → FalkorDB (`postgres_to_falkordb_`)
 
-- `mariadb_to_falkordb_runs`
-- `mariadb_to_falkordb_failed_runs`
-- `mariadb_to_falkordb_rows_fetched`
-- `mariadb_to_falkordb_rows_written`
-- `mariadb_to_falkordb_rows_deleted`
-- `mariadb_to_falkordb_mapping_runs{mapping="<name>"}`
-- `mariadb_to_falkordb_mapping_failed_runs{mapping="<name>"}`
-- `mariadb_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
-- `mariadb_to_falkordb_mapping_rows_written{mapping="<name>"}`
-- `mariadb_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+- `postgres_to_falkordb_runs`
+- `postgres_to_falkordb_failed_runs`
+- `postgres_to_falkordb_rows_fetched`
+- `postgres_to_falkordb_rows_written`
+- `postgres_to_falkordb_rows_deleted`
+- `postgres_to_falkordb_mapping_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `postgres_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### Snowflake → FalkorDB (`snowflake_to_falkordb_`)
+
+- `snowflake_to_falkordb_runs`
+- `snowflake_to_falkordb_failed_runs`
+- `snowflake_to_falkordb_rows_fetched`
+- `snowflake_to_falkordb_rows_written`
+- `snowflake_to_falkordb_rows_deleted`
+- `snowflake_to_falkordb_mapping_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ### SQL Server → FalkorDB (`sqlserver_to_falkordb_`)
 
