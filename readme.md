@@ -12,6 +12,25 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 ## Tools
 
+### ClickHouse → FalkorDB
+
+- Location: `ClickHouse-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from ClickHouse into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Documentation: [ClickHouse-to-FalkorDB/readme.md](ClickHouse-to-FalkorDB/readme.md)
+
+Quick start (from the crate directory):
+
+```bash
+cd ClickHouse-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config clickhouse.incremental.yaml
+
+# Continuous sync
+cargo run --release -- --config clickhouse.incremental.yaml --daemon --interval-secs 60
+```
+
 ### Databricks → FalkorDB
 
 - Location: `Databricks-to-FalkorDB/`
