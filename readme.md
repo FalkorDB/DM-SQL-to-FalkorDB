@@ -7,7 +7,7 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (Databricks / PostgreSQL / Snowflake)
+- Network access to your source system (MySQL / Databricks / PostgreSQL / Snowflake / ClickHouse)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -66,6 +66,26 @@ cargo run --release -- --config example.config.yaml
 
 # Continuous sync
 cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
+```
+
+### MySQL → FalkorDB
+
+- Location: `MySQL-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from MySQL into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Documentation: [MySQL-to-FalkorDB/readme.md](MySQL-to-FalkorDB/readme.md)
+- End-to-end sample: `MySQL-to-FalkorDB/sample_data/` + `MySQL-to-FalkorDB/mysql_sample_to_falkordb.yaml`
+
+Quick start (from the crate directory):
+
+```bash
+cd MySQL-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config mysql.incremental.yaml
+
+# Continuous sync
+cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
 ```
 
 ### Control plane (web UI + API)
@@ -248,6 +268,19 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `databricks_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### MySQL → FalkorDB (`mysql_to_falkordb_`)
+
+- `mysql_to_falkordb_runs`
+- `mysql_to_falkordb_failed_runs`
+- `mysql_to_falkordb_rows_fetched`
+- `mysql_to_falkordb_rows_written`
+- `mysql_to_falkordb_rows_deleted`
+- `mysql_to_falkordb_mapping_runs{mapping="<name>"}`
+- `mysql_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `mysql_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `mysql_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `mysql_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ## Common concepts (applies to the Rust loaders)
 

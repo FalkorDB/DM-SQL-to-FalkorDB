@@ -1,0 +1,32 @@
+{
+  "id": "mysql",
+  "displayName": "MySQL → FalkorDB",
+  "description": "Migrate and continuously sync structured data from MySQL into FalkorDB using declarative mappings.",
+  "workingDir": "MySQL-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "MySQL-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "MySQL-to-FalkorDB/mysql.event_table.yaml",
+      "MySQL-to-FalkorDB/mysql.incremental.yaml",
+      "MySQL-to-FalkorDB/mysql_sample_to_falkordb.yaml",
+      "MySQL-to-FalkorDB/example.file.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9995/",
+    "format": "prometheus_text",
+    "metricPrefix": "mysql_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}
