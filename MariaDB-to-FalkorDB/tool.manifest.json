@@ -1,0 +1,32 @@
+{
+  "id": "mariadb",
+  "displayName": "MariaDB → FalkorDB",
+  "description": "Migrate and continuously sync structured data from MariaDB into FalkorDB using declarative mappings.",
+  "workingDir": "MariaDB-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "MariaDB-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "MariaDB-to-FalkorDB/mariadb.event_table.yaml",
+      "MariaDB-to-FalkorDB/mariadb.incremental.yaml",
+      "MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml",
+      "MariaDB-to-FalkorDB/example.file.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9997/",
+    "format": "prometheus_text",
+    "metricPrefix": "mariadb_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}

@@ -7,7 +7,7 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (MySQL / SQL Server / Databricks / PostgreSQL / Snowflake / ClickHouse)
+- Network access to your source system (MySQL / MariaDB / SQL Server / Databricks / PostgreSQL / Snowflake / ClickHouse)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -105,6 +105,26 @@ cargo run --release -- --config mysql.incremental.yaml
 
 # Continuous sync
 cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
+```
+
+### MariaDB → FalkorDB
+
+- Location: `MariaDB-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
+- End-to-end sample: `MariaDB-to-FalkorDB/sample_data/` + `MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml`
+
+Quick start (from the crate directory):
+
+```bash
+cd MariaDB-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config mariadb.incremental.yaml
+
+# Continuous sync
+cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-secs 60
 ```
 
 ### SQL Server → FalkorDB
@@ -320,6 +340,19 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `mysql_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### MariaDB → FalkorDB (`mariadb_to_falkordb_`)
+
+- `mariadb_to_falkordb_runs`
+- `mariadb_to_falkordb_failed_runs`
+- `mariadb_to_falkordb_rows_fetched`
+- `mariadb_to_falkordb_rows_written`
+- `mariadb_to_falkordb_rows_deleted`
+- `mariadb_to_falkordb_mapping_runs{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `mariadb_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ### SQL Server → FalkorDB (`sqlserver_to_falkordb_`)
 
