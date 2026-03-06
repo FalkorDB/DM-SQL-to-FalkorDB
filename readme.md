@@ -7,7 +7,7 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (MySQL / Databricks / PostgreSQL / Snowflake / ClickHouse)
+- Network access to your source system (MySQL / SQL Server / Databricks / PostgreSQL / Snowflake / ClickHouse)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -86,6 +86,26 @@ cargo run --release -- --config mysql.incremental.yaml
 
 # Continuous sync
 cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
+```
+
+### SQL Server → FalkorDB
+
+- Location: `SQLServer-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from SQL Server into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Documentation: [SQLServer-to-FalkorDB/readme.md](SQLServer-to-FalkorDB/readme.md)
+- End-to-end sample: `SQLServer-to-FalkorDB/sample_data/` + `SQLServer-to-FalkorDB/sqlserver_sample_to_falkordb.yaml`
+
+Quick start (from the crate directory):
+
+```bash
+cd SQLServer-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config sqlserver.incremental.yaml
+
+# Continuous sync
+cargo run --release -- --config sqlserver.incremental.yaml --daemon --interval-secs 60
 ```
 
 ### Control plane (web UI + API)
@@ -281,6 +301,19 @@ Default scrape endpoints are configured per tool manifest for control-plane coll
 - `mysql_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### SQL Server → FalkorDB (`sqlserver_to_falkordb_`)
+
+- `sqlserver_to_falkordb_runs`
+- `sqlserver_to_falkordb_failed_runs`
+- `sqlserver_to_falkordb_rows_fetched`
+- `sqlserver_to_falkordb_rows_written`
+- `sqlserver_to_falkordb_rows_deleted`
+- `sqlserver_to_falkordb_mapping_runs{mapping="<name>"}`
+- `sqlserver_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `sqlserver_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `sqlserver_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `sqlserver_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ## Common concepts (applies to the Rust loaders)
 

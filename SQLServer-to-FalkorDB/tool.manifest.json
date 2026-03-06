@@ -1,0 +1,32 @@
+{
+  "id": "sqlserver",
+  "displayName": "SQL Server → FalkorDB",
+  "description": "Migrate and continuously sync structured data from SQL Server into FalkorDB using declarative mappings.",
+  "workingDir": "SQLServer-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "SQLServer-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "SQLServer-to-FalkorDB/sqlserver.event_table.yaml",
+      "SQLServer-to-FalkorDB/sqlserver.incremental.yaml",
+      "SQLServer-to-FalkorDB/sqlserver_sample_to_falkordb.yaml",
+      "SQLServer-to-FalkorDB/example.file.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9996/",
+    "format": "prometheus_text",
+    "metricPrefix": "sqlserver_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}

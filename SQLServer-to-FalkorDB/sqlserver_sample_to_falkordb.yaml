@@ -1,0 +1,127 @@
+# Example config: load the SQL Server sample commerce dataset into FalkorDB
+#
+# Usage:
+#   export SQLSERVER_CONNECTION_STRING="server=tcp:localhost,1433;User Id=sa;Password=...;Database=sqlserver_falkordb_sample;TrustServerCertificate=true;"
+#   export FALKORDB_ENDPOINT="falkor://127.0.0.1:6379"
+#   cargo run --release -- --config sqlserver_sample_to_falkordb.yaml
+
+sqlserver:
+  connection_string: "$SQLSERVER_CONNECTION_STRING"
+  trust_cert: true
+  fetch_batch_size: 10000
+  query_timeout_ms: 60000
+
+falkordb:
+  endpoint: "$FALKORDB_ENDPOINT"
+  graph: "sqlserver_sample_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "sqlserver_sample_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "dbo.customers"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "id"
+    properties:
+      first_name: { column: "first_name" }
+      last_name: { column: "last_name" }
+      email: { column: "email" }
+      city: { column: "city" }
+
+  - type: node
+    name: products
+    source:
+      table: "dbo.products"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Product"]
+    key:
+      column: "product_id"
+      property: "id"
+    properties:
+      sku: { column: "sku" }
+      name: { column: "name" }
+      category: { column: "category" }
+      price: { column: "price" }
+
+  - type: node
+    name: orders
+    source:
+      table: "dbo.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Order"]
+    key:
+      column: "order_id"
+      property: "id"
+    properties:
+      status: { column: "status" }
+      ordered_at: { column: "ordered_at" }
+      total_amount: { column: "total_amount" }
+
+  - type: edge
+    name: customer_placed_order
+    source:
+      table: "dbo.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "id"
+    properties:
+      ordered_at: { column: "ordered_at" }
+
+  - type: edge
+    name: order_contains_product
+    source:
+      table: "dbo.order_items"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "CONTAINS"
+    direction: out
+    from:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "id"
+    to:
+      node_mapping: products
+      match_on:
+        - column: "product_id"
+          property: "id"
+    properties:
+      quantity: { column: "quantity" }
+      unit_price: { column: "unit_price" }

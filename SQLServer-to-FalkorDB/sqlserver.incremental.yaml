@@ -1,0 +1,76 @@
+sqlserver:
+  # Prefer ADO connection string for SQL Server.
+  connection_string: "$SQLSERVER_CONNECTION_STRING"
+  # Optional discrete fields when connection_string is not set:
+  # host: "localhost"
+  # port: 1433
+  # user: "sa"
+  # password: "$SQLSERVER_PASSWORD"
+  # database: "analytics"
+  trust_cert: true
+  query_timeout_ms: 60000
+  fetch_batch_size: 5000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "sqlserver_incremental_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "state.incremental.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "dbo.customers"
+      where: "is_active = 1"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      initial_full_load: true
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "customer_id"
+    properties:
+      email: { column: "email" }
+      country: { column: "country" }
+
+  - type: node
+    name: orders
+    source:
+      table: "dbo.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      initial_full_load: true
+    labels: ["Order"]
+    key:
+      column: "order_id"
+      property: "order_id"
+    properties:
+      total: { column: "total" }
+
+  - type: edge
+    name: customer_orders
+    source:
+      table: "dbo.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      initial_full_load: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "customer_id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "order_id"
+    properties: {}

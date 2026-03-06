@@ -1,0 +1,22 @@
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "sqlserver_file_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      file: "example.rows.json"
+    mode: full
+    labels: ["Customer"]
+    key:
+      column: "id"
+      property: "id"
+    properties:
+      email: { column: "email" }
+      country: { column: "country" }
