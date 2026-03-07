@@ -73,7 +73,7 @@ export default function Layout() {
             </a>
 
             <Link to="/" className="font-semibold tracking-tight">
-              FalkorDB Migrate Control Plane
+              FalkorDB Data Migration tools
             </Link>
             <nav className="flex items-center gap-2">
               <NavItem to="/tools" label="Tools" />
