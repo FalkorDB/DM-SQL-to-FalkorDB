@@ -12,7 +12,8 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 ## Tools
 
-<img width="1403" height="832" alt="DM-UI-7-tools" src="https://github.com/user-attachments/assets/2eb37e12-638c-4b89-81b6-b41c31afe901" />
+<img width="1146" height="759" alt="DM-UI-7-tools-about" src="https://github.com/user-attachments/assets/28d1b773-5013-49b7-9de9-1675d49edabf" />
+
 
 
 ### ClickHouse → FalkorDB
