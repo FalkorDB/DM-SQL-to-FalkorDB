@@ -23,11 +23,29 @@ function NavItem({ to, label }: { to: string; label: string }) {
 
 export default function Layout() {
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const repoUrl = 'https://github.com/FalkorDB/DM-SQL-to-FalkorDB'
+  const licenseUrl =
+    'https://github.com/FalkorDB/DM-SQL-to-FalkorDB/blob/main/Snowflake-to-FalkorDB/LICENSE'
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
+  useEffect(() => {
+    if (!aboutOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAboutOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [aboutOpen])
   function toggleTheme() {
     const next: Theme = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
@@ -86,6 +104,12 @@ export default function Layout() {
           <div className="flex items-center gap-2">
             <button
               className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+              onClick={() => setAboutOpen(true)}
+            >
+              About
+            </button>
+            <button
+              className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
               onClick={setApiKey}
             >
               API key
@@ -103,6 +127,72 @@ export default function Layout() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Outlet />
       </main>
+
+      {aboutOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="about-dialog-title"
+          onClick={() => setAboutOpen(false)}
+        >
+          <div
+            className="Panel w-full max-w-xl p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="about-dialog-title" className="text-lg font-semibold">
+                  About FalkorDB Data Migration tools
+                </h2>
+                <p className="mt-1 text-sm text-foreground/70">
+                  Control plane UI for managing migration tools, configurations, runs, and metrics.
+                </p>
+              </div>
+              <button
+                className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
+                onClick={() => setAboutOpen(false)}
+                aria-label="Close about dialog"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <div className="text-foreground/70">Public repository</div>
+                <a
+                  className="text-primary hover:underline break-all"
+                  href={repoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {repoUrl}
+                </a>
+              </div>
+
+              <div>
+                <div className="text-foreground/70">Support</div>
+                <a className="text-primary hover:underline" href="mailto:support@falkordb.com">
+                  support@falkordb.com
+                </a>
+              </div>
+
+              <div>
+                <div className="text-foreground/70">License</div>
+                <a
+                  className="text-primary hover:underline break-all"
+                  href={licenseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View license
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
