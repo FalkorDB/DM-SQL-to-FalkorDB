@@ -9,6 +9,8 @@ The design mirrors the Snowflake-to-FalkorDB loader: you describe how Databricks
 - **Databricks SQL source**
   - Connects to a Databricks SQL warehouse via the REST Statement Execution API.
   - Supports `table` + optional `where` or full custom `select` queries.
+- **Schema scaffolding**
+  - Supports `--introspect-schema` and `--generate-template` to derive starter mappings from Databricks metadata.
 - **FalkorDB sink**
   - Writes nodes and edges using Cypher `UNWIND` + `MERGE`.
   - Automatically creates indexes on node key properties for better MERGE/MATCH performance.

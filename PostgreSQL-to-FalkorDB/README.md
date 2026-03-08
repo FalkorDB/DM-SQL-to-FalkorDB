@@ -10,6 +10,8 @@ The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB
   - Connects to PostgreSQL using `tokio-postgres`.
   - Supports `table` + optional `where` or full custom `select` queries per mapping.
   - Optional paging via `fetch_batch_size` for large incremental loads.
+- **Schema scaffolding**
+  - Supports `--introspect-schema` and `--generate-template` to derive starter YAML mappings from source metadata.
 - **FalkorDB sink**
   - Writes nodes and edges using Cypher `UNWIND` + `MERGE`.
   - Automatically creates indexes on node key properties for better MERGE/MATCH performance.

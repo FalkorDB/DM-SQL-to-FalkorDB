@@ -5,6 +5,7 @@ Rust CLI tool to migrate and continuously sync data from MariaDB into FalkorDB u
 - File source for local/testing workflows (`source.file`)
 - Node + edge mappings
 - Full and incremental sync modes
+- Schema scaffolding via `--introspect-schema` and `--generate-template` (with `--output` support)
 - Optional soft-delete handling via `delta.deleted_flag_*`
 - Optional purge modes:
   - whole graph (`--purge-graph`)

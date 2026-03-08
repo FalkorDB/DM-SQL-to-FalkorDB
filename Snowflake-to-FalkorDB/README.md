@@ -7,6 +7,7 @@ Rust-based CLI to migrate and continuously sync structured data from Snowflake i
 - Live Snowflake integration via `snowflake-connector-rs`
 - JSON/YAML config describing mappings from tables/columns to nodes and edges
 - Batched, parameterized Cypher `UNWIND` + `MERGE` into FalkorDB
+- Schema scaffolding via `--introspect-schema` and `--generate-template` (with `--output` support)
 - Incremental sync using an `updated_at` watermark per mapping
 - Delete semantics via `deleted_flag` columns
 - Purge options (entire graph or selected mappings)

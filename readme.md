@@ -20,6 +20,7 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 - Location: `ClickHouse-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from ClickHouse into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Scaffolding: supports schema introspection and starter template generation via `--introspect-schema` and `--generate-template`; infers node mappings from tables and conservative relationship mappings from id-like columns with review notes.
 - Documentation: [ClickHouse-to-FalkorDB/readme.md](ClickHouse-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
@@ -40,6 +41,7 @@ cargo run --release -- --config clickhouse.incremental.yaml --daemon --interval-
 
 - Location: `Databricks-to-FalkorDB/`
 - What it does: Loads and incrementally syncs tabular data from Databricks (Databricks SQL / warehouses) into FalkorDB based on a JSON/YAML mapping config.
+- Scaffolding: supports `--introspect-schema` and `--generate-template` using Databricks `information_schema`; emits catalog/schema-qualified source tables and inferred node/edge mappings where metadata is available.
 - Documentation: [Databricks-to-FalkorDB/README.md](Databricks-to-FalkorDB/README.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
@@ -59,6 +61,7 @@ Most configs reference environment variables for secrets (for example `$DATABRIC
 
 - Location: `MariaDB-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Scaffolding: supports schema extraction and template generation from metadata (`information_schema`) with PK/UK/FK-based inference, join-table heuristics, and schema-qualified source table output.
 - Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `MariaDB-to-FalkorDB/sample_data/` + `MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml`
@@ -80,6 +83,7 @@ cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-sec
 
 - Location: `MySQL-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from MySQL into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Scaffolding: supports schema extraction and template generation from metadata (`information_schema`) with PK/UK/FK-based inference, join-table heuristics, and schema-qualified source table output.
 - Documentation: [MySQL-to-FalkorDB/readme.md](MySQL-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `MySQL-to-FalkorDB/sample_data/` + `MySQL-to-FalkorDB/mysql_sample_to_falkordb.yaml`
@@ -101,6 +105,7 @@ cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 
 
 - Location: `PostgreSQL-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from PostgreSQL into FalkorDB (supports full or incremental mode; optional daemon mode).
+- Scaffolding: supports schema introspection and template generation from PostgreSQL catalogs with qualified `schema.table` output and incremental delta detection including `last_update`.
 - Documentation: [PostgreSQL-to-FalkorDB/README.md](PostgreSQL-to-FalkorDB/README.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
@@ -121,6 +126,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 
 - Location: `Snowflake-to-FalkorDB/`
 - What it does: Migrates and continuously syncs structured data from Snowflake into FalkorDB (supports incremental watermarks, optional purge modes, and daemon mode).
+- Scaffolding: supports schema introspection and template generation from Snowflake metadata views, emitting fully-qualified source tables and best-effort FK-derived edge mappings with ambiguity notes.
 - Documentation: [Snowflake-to-FalkorDB/README.md](Snowflake-to-FalkorDB/README.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
@@ -141,6 +147,7 @@ cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
 
 - Location: `SQLServer-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from SQL Server into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- Scaffolding: supports schema introspection and template generation from SQL Server system catalogs with PK/UK/FK inference, join-table detection, and qualified `schema.table` sources.
 - Documentation: [SQLServer-to-FalkorDB/readme.md](SQLServer-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `SQLServer-to-FalkorDB/sample_data/` + `SQLServer-to-FalkorDB/sqlserver_sample_to_falkordb.yaml`
