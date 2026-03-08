@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import '@falkordb/canvas'
 
@@ -21,8 +21,195 @@ type FalkorDBCanvasElement = HTMLElement & {
     foregroundColor?: string
     captionsKeys?: string[]
     showPropertyKeyPrefix?: boolean
+    onNodeClick?: (node: unknown, event: MouseEvent) => void
+    onNodeRightClick?: (node: unknown, event: MouseEvent) => void
+    onLinkClick?: (link: unknown, event: MouseEvent) => void
+    onLinkRightClick?: (link: unknown, event: MouseEvent) => void
+    onBackgroundClick?: (event: MouseEvent) => void
+    onBackgroundRightClick?: (event: MouseEvent) => void
   }) => void
   zoomToFit?: (paddingMultiplier?: number) => void
+}
+type MappingPropertySpec = { name: string; column?: string | null; graphType?: string | null }
+type MatchOnSpec = { column?: string | null; property?: string | null; graphType?: string | null }
+type NodePropertyView = {
+  id: number
+  mappingName: string
+  labels: string[]
+  sourceTable?: string
+  keyColumn?: string
+  keyProperty?: string
+  keyType?: string
+  properties: MappingPropertySpec[]
+}
+type EdgePropertyView = {
+  id: number
+  mappingName: string
+  relationship: string
+  fromMapping?: string
+  toMapping?: string
+  sourceTable?: string
+  properties: MappingPropertySpec[]
+  fromMatchOn: MatchOnSpec[]
+  toMatchOn: MatchOnSpec[]
+}
+type CanvasPopupState = {
+  x: number
+  y: number
+  node?: NodePropertyView
+  edge?: EdgePropertyView
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function mapSourceTypeToGraphType(sourceType?: string): string | undefined {
+  if (!sourceType) return undefined
+  const tokens = sourceType
+    .toLowerCase()
+    .replace(/["`[\]]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (tokens.some((token) => token === 'vector' || token === 'array' || token.startsWith('vector'))) {
+    return 'vector'
+  }
+  if (tokens.some((token) => token === 'bool' || token === 'boolean' || token === 'bit')) {
+    return 'boolean'
+  }
+  if (
+    tokens.some(
+      (token) =>
+        token === 'money' ||
+        token === 'real' ||
+        token === 'decimal' ||
+        token === 'numeric' ||
+        token === 'number' ||
+        token.startsWith('int') ||
+        token.endsWith('int') ||
+        token.startsWith('uint') ||
+        token.startsWith('float') ||
+        token.startsWith('double') ||
+        token.startsWith('serial'),
+    )
+  ) {
+    return 'number'
+  }
+  return 'string'
+}
+
+function resolveGraphType(primaryType?: string, fallbackSourceType?: string): string | undefined {
+  const normalizedPrimary = primaryType?.trim().toLowerCase()
+  if (normalizedPrimary && ['string', 'number', 'boolean', 'vector'].includes(normalizedPrimary)) {
+    return normalizedPrimary
+  }
+  return mapSourceTypeToGraphType(primaryType ?? fallbackSourceType)
+}
+
+function parsePropertySpecs(value: unknown): MappingPropertySpec[] {
+  if (!Array.isArray(value)) return []
+  const out: MappingPropertySpec[] = []
+  for (const item of value) {
+    const record = asRecord(item)
+    if (!record) continue
+    const name = asString(record.name)
+    if (!name) continue
+    out.push({
+      name,
+      column: asString(record.column),
+      graphType: resolveGraphType(asString(record.graph_type), asString(record.sql_type)),
+    })
+  }
+  return out
+}
+
+function parseMatchOnSpecs(value: unknown): MatchOnSpec[] {
+  if (!Array.isArray(value)) return []
+  const out: MatchOnSpec[] = []
+  for (const item of value) {
+    const record = asRecord(item)
+    if (!record) continue
+    out.push({
+      column: asString(record.column),
+      property: asString(record.property),
+      graphType: resolveGraphType(asString(record.graph_type), asString(record.sql_type)),
+    })
+  }
+  return out
+}
+
+function parseLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+function parseNumericId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function clampPopupPosition(clientX: number, clientY: number) {
+  const POPUP_WIDTH = 380
+  const POPUP_HEIGHT = 420
+  const PADDING = 8
+  const x = Math.max(
+    PADDING,
+    Math.min(clientX + 12, window.innerWidth - POPUP_WIDTH - PADDING),
+  )
+  const y = Math.max(
+    PADDING,
+    Math.min(clientY + 12, window.innerHeight - POPUP_HEIGHT - PADDING),
+  )
+  return { x, y }
+}
+
+function parseNodePropertyViewFromPayload(payload: unknown): NodePropertyView | null {
+  const node = asRecord(payload)
+  if (!node) return null
+  const id = parseNumericId(node.id)
+  if (id == null) return null
+  const data = asRecord(node.data)
+  return {
+    id,
+    mappingName: asString(data?.mapping_name) ?? `node_${id}`,
+    labels: parseLabels(node.labels),
+    sourceTable: asString(data?.source_table),
+    keyColumn: asString(data?.key_column),
+    keyProperty: asString(data?.key_property),
+    keyType: resolveGraphType(asString(data?.key_type), asString(data?.key_sql_type)),
+    properties: parsePropertySpecs(data?.properties),
+  }
+}
+
+function parseEdgePropertyViewFromPayload(payload: unknown): EdgePropertyView | null {
+  const edge = asRecord(payload)
+  if (!edge) return null
+  const id = parseNumericId(edge.id)
+  if (id == null) return null
+  const data = asRecord(edge.data)
+  return {
+    id,
+    mappingName: asString(data?.mapping_name) ?? `edge_${id}`,
+    relationship: asString(edge.relationship) ?? 'RELATES_TO',
+    fromMapping: asString(data?.from_mapping),
+    toMapping: asString(data?.to_mapping),
+    sourceTable: asString(data?.source_table),
+    properties: parsePropertySpecs(data?.properties),
+    fromMatchOn: parseMatchOnSpecs(data?.from_match_on),
+    toMatchOn: parseMatchOnSpecs(data?.to_match_on),
+  }
 }
 
 function inferSyntax(text: string): Exclude<ConfigSyntax, 'auto'> {
@@ -69,6 +256,7 @@ export default function ConfigEditorPage() {
   const [generatingTemplate, setGeneratingTemplate] = useState(false)
   const [previewingSchema, setPreviewingSchema] = useState(false)
   const [previewingGraph, setPreviewingGraph] = useState(false)
+  const [canvasPopup, setCanvasPopup] = useState<CanvasPopupState | null>(null)
 
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark'),
@@ -76,6 +264,7 @@ export default function ConfigEditorPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const canvasRef = useRef<FalkorDBCanvasElement | null>(null)
+  const canvasPopupRef = useRef<HTMLDivElement | null>(null)
   const nav = useNavigate()
 
   useEffect(() => {
@@ -102,6 +291,7 @@ export default function ConfigEditorPage() {
         setCanvasData(null)
         setCanvasWarnings([])
         setCanvasSource(null)
+        setCanvasPopup(null)
         setActiveTab('config')
         setSyntax('auto')
       })
@@ -116,6 +306,46 @@ export default function ConfigEditorPage() {
     obs.observe(root, { attributes: true, attributeFilter: ['class'] })
     return () => obs.disconnect()
   }, [])
+  const openNodePopup = useCallback((payload: unknown, event: MouseEvent) => {
+    const node = parseNodePropertyViewFromPayload(payload)
+    if (!node) return
+    const { x, y } = clampPopupPosition(event.clientX, event.clientY)
+    setCanvasPopup({ x, y, node })
+  }, [])
+
+  const openEdgePopup = useCallback((payload: unknown, event: MouseEvent) => {
+    const edge = parseEdgePropertyViewFromPayload(payload)
+    if (!edge) return
+    const { x, y } = clampPopupPosition(event.clientX, event.clientY)
+    setCanvasPopup({ x, y, edge })
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'canvas') setCanvasPopup(null)
+  }, [activeTab])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCanvasPopup(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    if (!canvasPopup) return
+
+    const onPointerDown = (event: MouseEvent) => {
+      const popup = canvasPopupRef.current
+      if (!popup) return
+      const target = event.target as Node | null
+      if (target && popup.contains(target)) return
+      setCanvasPopup(null)
+    }
+
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [canvasPopup])
 
   useEffect(() => {
     if (activeTab !== 'canvas' || !canvasData) return
@@ -128,12 +358,31 @@ export default function ConfigEditorPage() {
       foregroundColor: isDark ? '#E5E7EB' : '#111827',
       captionsKeys: ['node_label', 'mapping_name'],
       showPropertyKeyPrefix: false,
+      onNodeClick: (node, event) => {
+        openNodePopup(node, event)
+      },
+      onNodeRightClick: (node, event) => {
+        event.preventDefault()
+        openNodePopup(node, event)
+      },
+      onLinkClick: (link, event) => {
+        openEdgePopup(link, event)
+      },
+      onLinkRightClick: (link, event) => {
+        event.preventDefault()
+        openEdgePopup(link, event)
+      },
+      onBackgroundClick: () => setCanvasPopup(null),
+      onBackgroundRightClick: (event) => {
+        event.preventDefault()
+        setCanvasPopup(null)
+      },
     })
 
     if (typeof canvas.zoomToFit === 'function' && canvasData.nodes.length > 0) {
       window.setTimeout(() => canvas.zoomToFit?.(1.05), 50)
     }
-  }, [activeTab, canvasData, isDark])
+  }, [activeTab, canvasData, isDark, openEdgePopup, openNodePopup])
 
   const title = isNew ? 'New config' : 'Edit config'
 
@@ -250,6 +499,7 @@ export default function ConfigEditorPage() {
       setCanvasData(res.canvas_data)
       setCanvasWarnings(res.warnings ?? [])
       setCanvasSource(res.source)
+      setCanvasPopup(null)
       setActiveTab('canvas')
     } catch (e) {
       setError(String(e))
@@ -576,7 +826,7 @@ export default function ConfigEditorPage() {
         ) : null}
 
         {activeTab === 'canvas' ? (
-          <label className="block text-sm">
+          <div className="block text-sm">
             <div className="flex items-center justify-between mb-1">
               <div className="text-foreground/70">
                 Graph visualization
@@ -591,6 +841,7 @@ export default function ConfigEditorPage() {
                   setCanvasData(null)
                   setCanvasWarnings([])
                   setCanvasSource(null)
+                  setCanvasPopup(null)
                 }}
               >
                 Clear
@@ -614,7 +865,155 @@ export default function ConfigEditorPage() {
                 </div>
               )}
             </div>
-          </label>
+            <div className="mt-2 rounded-md border border-border bg-background/40 px-3 py-2 text-xs text-foreground/80">
+              <div className="font-medium text-foreground/90">Usability note</div>
+              <div className="mt-1">
+                Click <span className="font-medium">Preview graph</span> after YAML changes. Then
+                left-click or right-click a node/edge in the canvas to open its extracted mapping
+                properties. Click the background or press <span className="font-medium">Esc</span> to close.
+              </div>
+            </div>
+            {canvasPopup ? (
+              <div
+                ref={canvasPopupRef}
+                className="fixed z-50 w-[380px] max-h-[420px] overflow-auto rounded-md border border-border bg-background p-3 shadow-lg"
+                style={{ left: `${canvasPopup.x}px`, top: `${canvasPopup.y}px` }}
+                onContextMenu={(event) => event.preventDefault()}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-xs font-medium text-foreground/90">
+                    {canvasPopup.node ? 'Node label properties' : 'Edge properties'}
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 text-[11px] hover:border-primary"
+                    onClick={() => setCanvasPopup(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+                {canvasPopup.node ? (
+                  <div className="space-y-1 text-[11px] text-foreground/80">
+                    <div className="font-medium text-foreground">{canvasPopup.node.mappingName}</div>
+                    <div>Labels: {canvasPopup.node.labels.join(', ') || '—'}</div>
+                    {canvasPopup.node.sourceTable ? (
+                      <div>Source: <code>{canvasPopup.node.sourceTable}</code></div>
+                    ) : null}
+                    {canvasPopup.node.keyColumn || canvasPopup.node.keyProperty ? (
+                      <div>
+                        Key: <code>{canvasPopup.node.keyColumn ?? '?'}</code>
+                        {' → '}
+                        <code>{canvasPopup.node.keyProperty ?? '?'}</code>
+                        {canvasPopup.node.keyType ? (
+                          <>
+                            {' '}
+                            (<code>{canvasPopup.node.keyType}</code>)
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="pt-1 text-foreground/70">Properties:</div>
+                    {canvasPopup.node.properties.length > 0 ? (
+                      <ul className="list-disc pl-4">
+                        {canvasPopup.node.properties.map((property) => (
+                          <li key={`${canvasPopup.node?.mappingName}-${property.name}`}>
+                            <code>{property.name}</code>
+                            {property.column ? (
+                              <>
+                                {' ← '}
+                                <code>{property.column}</code>
+                              </>
+                            ) : null}
+                            {property.graphType ? (
+                              <>
+                                {' '}
+                                (<code>{property.graphType}</code>)
+                              </>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-foreground/60">No mapped properties.</div>
+                    )}
+                  </div>
+                ) : null}
+                {canvasPopup.edge ? (
+                  <div className="space-y-1 text-[11px] text-foreground/80">
+                    <div className="font-medium text-foreground">{canvasPopup.edge.mappingName}</div>
+                    <div>Relationship: <code>{canvasPopup.edge.relationship}</code></div>
+                    {canvasPopup.edge.fromMapping || canvasPopup.edge.toMapping ? (
+                      <div>
+                        Endpoints: <code>{canvasPopup.edge.fromMapping ?? '?'}</code>
+                        {' → '}
+                        <code>{canvasPopup.edge.toMapping ?? '?'}</code>
+                      </div>
+                    ) : null}
+                    {canvasPopup.edge.sourceTable ? (
+                      <div>Source: <code>{canvasPopup.edge.sourceTable}</code></div>
+                    ) : null}
+                    <div className="pt-1 text-foreground/70">Properties:</div>
+                    {canvasPopup.edge.properties.length > 0 ? (
+                      <ul className="list-disc pl-4">
+                        {canvasPopup.edge.properties.map((property) => (
+                          <li key={`${canvasPopup.edge?.mappingName}-${property.name}`}>
+                            <code>{property.name}</code>
+                            {property.column ? (
+                              <>
+                                {' ← '}
+                                <code>{property.column}</code>
+                              </>
+                            ) : null}
+                            {property.graphType ? (
+                              <>
+                                {' '}
+                                (<code>{property.graphType}</code>)
+                              </>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-foreground/60">No mapped properties.</div>
+                    )}
+                    {(canvasPopup.edge.fromMatchOn.length > 0 || canvasPopup.edge.toMatchOn.length > 0) ? (
+                      <div className="pt-1">
+                        <div className="text-foreground/70">Match keys:</div>
+                        <ul className="list-disc pl-4">
+                          {canvasPopup.edge.fromMatchOn.map((entry, idx) => (
+                            <li key={`${canvasPopup.edge?.mappingName}-from-${idx}`}>
+                              from <code>{entry.column ?? '?'}</code>
+                              {' → '}
+                              <code>{entry.property ?? '?'}</code>
+                              {entry.graphType ? (
+                                <>
+                                  {' '}
+                                  (<code>{entry.graphType}</code>)
+                                </>
+                              ) : null}
+                            </li>
+                          ))}
+                          {canvasPopup.edge.toMatchOn.map((entry, idx) => (
+                            <li key={`${canvasPopup.edge?.mappingName}-to-${idx}`}>
+                              to <code>{entry.column ?? '?'}</code>
+                              {' → '}
+                              <code>{entry.property ?? '?'}</code>
+                              {entry.graphType ? (
+                                <>
+                                  {' '}
+                                  (<code>{entry.graphType}</code>)
+                                </>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>

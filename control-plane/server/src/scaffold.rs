@@ -40,6 +40,67 @@ pub async fn generate_scaffold_template(
     Ok(Json(response))
 }
 
+fn extract_mapping_properties(mapping: &serde_yaml::Mapping) -> Vec<serde_json::Value> {
+    let Some(properties) = mapping
+        .get(YamlValue::String("properties".to_string()))
+        .and_then(YamlValue::as_mapping)
+    else {
+        return vec![];
+    };
+
+    let mut out: Vec<(String, Option<String>)> = Vec::new();
+    for (prop_key, prop_value) in properties {
+        let Some(name) = prop_key.as_str() else {
+            continue;
+        };
+        let column = prop_value
+            .as_mapping()
+            .and_then(|m| m.get(YamlValue::String("column".to_string())))
+            .and_then(YamlValue::as_str)
+            .map(std::string::ToString::to_string);
+
+        out.push((name.to_string(), column));
+    }
+
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.into_iter()
+        .map(|(name, column)| serde_json::json!({ "name": name, "column": column }))
+        .collect()
+}
+
+fn extract_match_on_fields(mapping: &serde_yaml::Mapping, side: &str) -> Vec<serde_json::Value> {
+    let Some(match_on) = mapping
+        .get(YamlValue::String(side.to_string()))
+        .and_then(YamlValue::as_mapping)
+        .and_then(|side_cfg| side_cfg.get(YamlValue::String("match_on".to_string())))
+        .and_then(YamlValue::as_sequence)
+    else {
+        return vec![];
+    };
+
+    let mut out = Vec::new();
+    for entry in match_on {
+        let Some(entry_map) = entry.as_mapping() else {
+            continue;
+        };
+        let column = entry_map
+            .get(YamlValue::String("column".to_string()))
+            .and_then(YamlValue::as_str)
+            .map(std::string::ToString::to_string);
+        let property = entry_map
+            .get(YamlValue::String("property".to_string()))
+            .and_then(YamlValue::as_str)
+            .map(std::string::ToString::to_string);
+
+        out.push(serde_json::json!({
+            "column": column,
+            "property": property,
+        }));
+    }
+
+    out
+}
+
 pub async fn generate_schema_graph_preview(
     State(state): State<AppState>,
     AxumPath(tool_id): AxumPath<String>,
@@ -54,9 +115,20 @@ pub async fn generate_schema_graph_preview(
 
     let mut warnings = Vec::new();
     match build_canvas_data_from_config_content(&req.config_content) {
-        Ok((canvas_data, mut parse_warnings)) => {
+        Ok((mut canvas_data, mut parse_warnings)) => {
             warnings.append(&mut parse_warnings);
             if !canvas_data.nodes.is_empty() || !canvas_data.links.is_empty() {
+                if supports_scaffold(&tool.manifest.id) {
+                    match run_scaffold_generation(&state, tool, &req.config_content, true).await {
+                        Ok(scaffold) => maybe_enrich_canvas_data_from_schema_summary(
+                            &mut canvas_data,
+                            scaffold.schema_summary.as_deref(),
+                            &mut warnings,
+                        ),
+                        Err((_, err)) => warnings
+                            .push(format!("type enrichment skipped: failed schema introspection: {err}")),
+                    }
+                }
                 return Ok(Json(GenerateSchemaGraphPreviewResponse {
                     canvas_data,
                     warnings,
@@ -73,13 +145,18 @@ pub async fn generate_schema_graph_preview(
     }
 
     if supports_scaffold(&tool.manifest.id) {
-        match run_scaffold_generation(&state, tool, &req.config_content, false).await {
+        match run_scaffold_generation(&state, tool, &req.config_content, true).await {
             Ok(scaffold) => {
                 match build_canvas_data_from_config_content(&scaffold.template_yaml) {
-                    Ok((canvas_data, mut parse_warnings)) => {
+                    Ok((mut canvas_data, mut parse_warnings)) => {
                         warnings
                         .push("using scaffold-template fallback because config mappings were unavailable".to_string());
                         warnings.append(&mut parse_warnings);
+                        maybe_enrich_canvas_data_from_schema_summary(
+                            &mut canvas_data,
+                            scaffold.schema_summary.as_deref(),
+                            &mut warnings,
+                        );
                         if !canvas_data.nodes.is_empty() || !canvas_data.links.is_empty() {
                             return Ok(Json(GenerateSchemaGraphPreviewResponse {
                                 canvas_data,
@@ -196,12 +273,357 @@ fn split_scaffold_output(stdout: &str, include_schema: bool) -> (Option<String>,
 
     (None, stdout.trim().to_string())
 }
+
+fn maybe_enrich_canvas_data_from_schema_summary(
+    canvas_data: &mut CanvasData,
+    schema_summary: Option<&str>,
+    warnings: &mut Vec<String>,
+) {
+    let Some(schema_summary) = schema_summary else {
+        warnings.push(
+            "schema summary was unavailable; SQL property types could not be resolved".to_string(),
+        );
+        return;
+    };
+
+    match build_table_column_type_index(schema_summary) {
+        Ok(type_index) => enrich_canvas_data_with_graph_types(canvas_data, &type_index),
+        Err(err) => {
+            warnings.push(format!("failed to parse schema summary for graph types: {err}"));
+        }
+    }
+}
+
+fn build_table_column_type_index(
+    schema_summary: &str,
+) -> Result<HashMap<String, HashMap<String, String>>, String> {
+    let parsed: YamlValue =
+        serde_yaml::from_str(schema_summary).map_err(|e| format!("invalid schema summary: {e}"))?;
+    let root = parsed
+        .as_mapping()
+        .ok_or_else(|| "schema summary root is not a mapping".to_string())?;
+    let tables = root
+        .get(YamlValue::String("tables".to_string()))
+        .and_then(YamlValue::as_sequence)
+        .ok_or_else(|| "schema summary missing 'tables' sequence".to_string())?;
+
+    let mut table_index: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for table in tables {
+        let Some(table_map) = table.as_mapping() else {
+            continue;
+        };
+
+        let Some(table_name) = table_map
+            .get(YamlValue::String("name".to_string()))
+            .and_then(YamlValue::as_str)
+            .map(normalize_identifier)
+        else {
+            continue;
+        };
+
+        let schema_name = table_map
+            .get(YamlValue::String("schema".to_string()))
+            .and_then(YamlValue::as_str)
+            .map(normalize_identifier);
+
+        let Some(columns) = table_map
+            .get(YamlValue::String("columns".to_string()))
+            .and_then(YamlValue::as_sequence)
+        else {
+            continue;
+        };
+
+        let mut column_index = HashMap::new();
+        for column in columns {
+            let Some(column_map) = column.as_mapping() else {
+                continue;
+            };
+            let Some(column_name) = column_map
+                .get(YamlValue::String("name".to_string()))
+                .and_then(YamlValue::as_str)
+            else {
+                continue;
+            };
+            let Some(data_type) = column_map
+                .get(YamlValue::String("data_type".to_string()))
+                .and_then(YamlValue::as_str)
+            else {
+                continue;
+            };
+            column_index.insert(normalize_identifier(column_name), data_type.to_string());
+        }
+
+        if column_index.is_empty() {
+            continue;
+        }
+
+        table_index.insert(table_name.clone(), column_index.clone());
+        if let Some(schema_name) = schema_name {
+            table_index.insert(format!("{schema_name}.{table_name}"), column_index);
+        }
+    }
+
+    if table_index.is_empty() {
+        return Err("schema summary did not contain typed table columns".to_string());
+    }
+
+    Ok(table_index)
+}
+
+fn enrich_canvas_data_with_graph_types(
+    canvas_data: &mut CanvasData,
+    table_index: &HashMap<String, HashMap<String, String>>,
+) {
+    let mut node_table_by_mapping = HashMap::new();
+    for node in &canvas_data.nodes {
+        let Some(node_data) = node.data.as_object() else {
+            continue;
+        };
+        let Some(mapping_name) = node_data
+            .get("mapping_name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let Some(source_table) = node_data
+            .get("source_table")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        node_table_by_mapping.insert(mapping_name, source_table);
+    }
+
+    for node in &mut canvas_data.nodes {
+        let Some(node_data) = node.data.as_object_mut() else {
+            continue;
+        };
+        let source_table = node_data
+            .get("source_table")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let key_column = node_data
+            .get("key_column")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let Some(source_table) = source_table else {
+            continue;
+        };
+        let Some(column_types) = lookup_table_columns(table_index, &source_table) else {
+            continue;
+        };
+
+        if let Some(properties) = node_data.get_mut("properties") {
+            enrich_properties_value(properties, column_types);
+        }
+
+        if let Some(key_column) = key_column {
+            if let Some(source_type) = lookup_column_type(column_types, &key_column) {
+                node_data.insert(
+                    "key_type".to_string(),
+                    serde_json::Value::String(map_source_type_to_graph_type(source_type).to_string()),
+                );
+            }
+        }
+    }
+
+    for edge in &mut canvas_data.links {
+        let Some(edge_data) = edge.data.as_object_mut() else {
+            continue;
+        };
+
+        let edge_source_table = edge_data
+            .get("source_table")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        if let Some(edge_source_table) = edge_source_table {
+            if let Some(column_types) = lookup_table_columns(table_index, &edge_source_table) {
+                if let Some(properties) = edge_data.get_mut("properties") {
+                    enrich_properties_value(properties, column_types);
+                }
+            }
+        }
+
+        let from_mapping = edge_data
+            .get("from_mapping")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let to_mapping = edge_data
+            .get("to_mapping")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+
+        if let Some(from_mapping) = from_mapping {
+            if let Some(source_table) = node_table_by_mapping.get(&from_mapping) {
+                if let Some(column_types) = lookup_table_columns(table_index, source_table) {
+                    if let Some(match_on) = edge_data.get_mut("from_match_on") {
+                        enrich_match_on_value(match_on, column_types);
+                    }
+                }
+            }
+        }
+
+        if let Some(to_mapping) = to_mapping {
+            if let Some(source_table) = node_table_by_mapping.get(&to_mapping) {
+                if let Some(column_types) = lookup_table_columns(table_index, source_table) {
+                    if let Some(match_on) = edge_data.get_mut("to_match_on") {
+                        enrich_match_on_value(match_on, column_types);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn enrich_properties_value(value: &mut serde_json::Value, column_types: &HashMap<String, String>) {
+    let Some(properties) = value.as_array_mut() else {
+        return;
+    };
+
+    for property in properties {
+        let Some(property_map) = property.as_object_mut() else {
+            continue;
+        };
+        let column = property_map
+            .get("column")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let Some(column) = column else {
+            continue;
+        };
+
+        if let Some(source_type) = lookup_column_type(column_types, &column) {
+            property_map.insert(
+                "graph_type".to_string(),
+                serde_json::Value::String(map_source_type_to_graph_type(source_type).to_string()),
+            );
+        }
+    }
+}
+
+fn enrich_match_on_value(value: &mut serde_json::Value, column_types: &HashMap<String, String>) {
+    let Some(match_fields) = value.as_array_mut() else {
+        return;
+    };
+
+    for entry in match_fields {
+        let Some(entry_map) = entry.as_object_mut() else {
+            continue;
+        };
+        let column = entry_map
+            .get("column")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let Some(column) = column else {
+            continue;
+        };
+
+        if let Some(source_type) = lookup_column_type(column_types, &column) {
+            entry_map.insert(
+                "graph_type".to_string(),
+                serde_json::Value::String(map_source_type_to_graph_type(source_type).to_string()),
+            );
+        }
+    }
+}
+
+fn lookup_table_columns<'a>(
+    table_index: &'a HashMap<String, HashMap<String, String>>,
+    source_table: &str,
+) -> Option<&'a HashMap<String, String>> {
+    let normalized = normalize_table_name(source_table);
+    if let Some(columns) = table_index.get(&normalized) {
+        return Some(columns);
+    }
+
+    let parts: Vec<&str> = normalized.split('.').collect();
+    if parts.len() >= 2 {
+        let schema_and_table = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
+        if let Some(columns) = table_index.get(&schema_and_table) {
+            return Some(columns);
+        }
+    }
+
+    normalized
+        .rsplit_once('.')
+        .and_then(|(_, table_name)| table_index.get(table_name))
+}
+
+fn lookup_column_type<'a>(
+    column_types: &'a HashMap<String, String>,
+    column_name: &str,
+) -> Option<&'a str> {
+    column_types
+        .get(&normalize_identifier(column_name))
+        .map(String::as_str)
+}
+
+fn map_source_type_to_graph_type(source_type: &str) -> &'static str {
+    let tokens = normalize_identifier(source_type)
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    if tokens
+        .iter()
+        .any(|token| token == "vector" || token == "array" || token.starts_with("vector"))
+    {
+        return "vector";
+    }
+
+    if tokens.iter().any(|token| {
+        token == "bool" || token == "boolean" || token == "bit"
+    }) {
+        return "boolean";
+    }
+
+    if tokens.iter().any(|token| {
+        token == "money"
+            || token == "real"
+            || token == "decimal"
+            || token == "numeric"
+            || token == "number"
+            || token.starts_with("int")
+            || token.ends_with("int")
+            || token.starts_with("uint")
+            || token.starts_with("float")
+            || token.starts_with("double")
+            || token.starts_with("serial")
+    }) {
+        return "number";
+    }
+
+    "string"
+}
+
+fn normalize_table_name(value: &str) -> String {
+    normalize_identifier(value.split_whitespace().next().unwrap_or(value))
+}
+
+fn normalize_identifier(value: &str) -> String {
+    value
+        .trim()
+        .replace('\"', "")
+        .replace('`', "")
+        .replace('[', "")
+        .replace(']', "")
+        .to_ascii_lowercase()
+}
 #[derive(Debug)]
 struct PendingEdge {
     name: String,
     relationship: String,
     from_mapping: String,
     to_mapping: String,
+    source_table: Option<String>,
+    properties: Vec<serde_json::Value>,
+    from_match_on: Vec<serde_json::Value>,
+    to_match_on: Vec<serde_json::Value>,
 }
 
 fn build_canvas_data_from_config_content(
@@ -257,6 +679,9 @@ fn build_canvas_data_from_config_content(
                     .map(std::string::ToString::to_string);
                 let key_column = get_nested_string_field(mapping, "key", "column")
                     .map(std::string::ToString::to_string);
+                let key_property = get_nested_string_field(mapping, "key", "property")
+                    .map(std::string::ToString::to_string);
+                let properties = extract_mapping_properties(mapping);
                 let node_id = next_node_id;
                 next_node_id += 1;
                 node_ids_by_mapping.insert(name.to_string(), node_id);
@@ -274,6 +699,8 @@ fn build_canvas_data_from_config_content(
                         "mapping_name": name,
                         "source_table": source_table,
                         "key_column": key_column,
+                        "key_property": key_property,
+                        "properties": properties,
                     }),
                 });
             }
@@ -295,12 +722,21 @@ fn build_canvas_data_from_config_content(
                     ));
                     continue;
                 };
+                let source_table = get_nested_string_field(mapping, "source", "table")
+                    .map(std::string::ToString::to_string);
+                let properties = extract_mapping_properties(mapping);
+                let from_match_on = extract_match_on_fields(mapping, "from");
+                let to_match_on = extract_match_on_fields(mapping, "to");
 
                 pending_edges.push(PendingEdge {
                     name: name.to_string(),
                     relationship,
                     from_mapping: from_mapping.to_string(),
                     to_mapping: to_mapping.to_string(),
+                    source_table,
+                    properties,
+                    from_match_on,
+                    to_match_on,
                 });
             }
             _ => {
@@ -344,6 +780,10 @@ fn build_canvas_data_from_config_content(
                 "mapping_name": edge.name,
                 "from_mapping": edge.from_mapping,
                 "to_mapping": edge.to_mapping,
+                "source_table": edge.source_table,
+                "properties": edge.properties,
+                "from_match_on": edge.from_match_on,
+                "to_match_on": edge.to_match_on,
             }),
         });
         next_edge_id += 1;
@@ -434,10 +874,19 @@ mappings:
   - type: edge
     name: orders_customer
     relationship: PLACED_BY
+    properties:
+      ordered_at:
+        column: ordered_at
     from:
       node_mapping: orders
+      match_on:
+        - column: order_id
+          property: id
     to:
       node_mapping: customers
+      match_on:
+        - column: customer_id
+          property: id
 "#;
 
         let (canvas, warnings) =
@@ -446,6 +895,30 @@ mappings:
         assert_eq!(canvas.nodes.len(), 2);
         assert_eq!(canvas.links.len(), 1);
         assert_eq!(canvas.links[0].relationship, "PLACED_BY");
+        assert_eq!(
+            canvas.links[0]
+                .data
+                .get("properties")
+                .and_then(serde_json::Value::as_array)
+                .map(|v| v.len()),
+            Some(1)
+        );
+        assert_eq!(
+            canvas.links[0]
+                .data
+                .get("from_match_on")
+                .and_then(serde_json::Value::as_array)
+                .map(|v| v.len()),
+            Some(1)
+        );
+        assert_eq!(
+            canvas.links[0]
+                .data
+                .get("to_match_on")
+                .and_then(serde_json::Value::as_array)
+                .map(|v| v.len()),
+            Some(1)
+        );
     }
 
     #[test]
@@ -473,5 +946,126 @@ mappings:
         assert!(warnings
             .iter()
             .any(|w| w.contains("references missing to node mapping")));
+    }
+
+    #[test]
+    fn enriches_canvas_with_graph_types_from_schema_summary() {
+        let config = r#"
+mappings:
+  - type: node
+    name: customers
+    labels: [Customer]
+    source:
+      table: public.customers
+    key:
+      column: customer_id
+      property: id
+    properties:
+      name:
+        column: customer_name
+  - type: node
+    name: orders
+    labels: [Order]
+    source:
+      table: public.orders
+    key:
+      column: order_id
+      property: id
+  - type: edge
+    name: orders_customer
+    relationship: PLACED_BY
+    source:
+      table: public.orders
+    properties:
+      ordered_at:
+        column: ordered_at
+    from:
+      node_mapping: orders
+      match_on:
+        - column: order_id
+          property: id
+    to:
+      node_mapping: customers
+      match_on:
+        - column: customer_id
+          property: id
+"#;
+
+        let schema_summary = r#"
+database: app
+tables:
+  - schema: public
+    name: customers
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: text
+  - schema: public
+    name: orders
+    columns:
+      - name: order_id
+        data_type: bigint
+      - name: customer_id
+        data_type: integer
+      - name: ordered_at
+        data_type: timestamp without time zone
+"#;
+
+        let (mut canvas, warnings) =
+            build_canvas_data_from_config_content(config).expect("should parse");
+        assert!(warnings.is_empty());
+
+        let type_index = build_table_column_type_index(schema_summary).expect("index should parse");
+        enrich_canvas_data_with_graph_types(&mut canvas, &type_index);
+
+        let customers_node = canvas
+            .nodes
+            .iter()
+            .find(|n| n.data.get("mapping_name").and_then(serde_json::Value::as_str) == Some("customers"))
+            .expect("customers node should exist");
+        assert_eq!(
+            customers_node.data.get("key_type").and_then(serde_json::Value::as_str),
+            Some("number")
+        );
+        assert_eq!(
+            customers_node
+                .data
+                .get("properties")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|props| props.first())
+                .and_then(|p| p.get("graph_type"))
+                .and_then(serde_json::Value::as_str),
+            Some("string")
+        );
+
+        let edge = canvas.links.first().expect("edge should exist");
+        assert_eq!(
+            edge.data
+                .get("properties")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|props| props.first())
+                .and_then(|p| p.get("graph_type"))
+                .and_then(serde_json::Value::as_str),
+            Some("string")
+        );
+        assert_eq!(
+            edge.data
+                .get("from_match_on")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|fields| fields.first())
+                .and_then(|f| f.get("graph_type"))
+                .and_then(serde_json::Value::as_str),
+            Some("number")
+        );
+        assert_eq!(
+            edge.data
+                .get("to_match_on")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|fields| fields.first())
+                .and_then(|f| f.get("graph_type"))
+                .and_then(serde_json::Value::as_str),
+            Some("number")
+        );
     }
 }
