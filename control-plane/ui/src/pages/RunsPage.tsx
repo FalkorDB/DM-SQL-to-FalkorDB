@@ -33,7 +33,7 @@ export default function RunsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Runs</h1>
 
-      <div className="Panel p-4">
+      <div className="Panel p-2">
         <div className="text-sm text-foreground/70 mb-2">Filter by tool</div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -65,9 +65,9 @@ export default function RunsPage() {
           <Link
             key={r.id}
             to={`/runs/${r.id}`}
-            className="Panel p-4 block hover:border-primary transition-colors"
+            className="Panel p-2 block hover:border-primary transition-colors"
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold">{r.tool_id}</div>
                 <div className="text-sm text-foreground/70">

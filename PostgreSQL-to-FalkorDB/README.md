@@ -236,6 +236,25 @@ From the crate directory:
 cargo build --release
 ```
 
+### Scaffold mappings from source schema (new)
+Generate a schema summary:
+```bash
+cargo run --release -- \
+  --config postgres-to-falkordb/example.config.yaml \
+  --introspect-schema
+```
+Generate a starter YAML template:
+```bash
+cargo run --release -- \
+  --config postgres-to-falkordb/example.config.yaml \
+  --generate-template \
+  --output postgres.generated.template.yaml
+```
+Notes:
+- Scaffold flags are read-only against the source and do not execute migration.
+- Scaffold mode cannot be combined with daemon mode.
+- The generated template is a starting point and should be reviewed before production use.
+
 Example single run:
 
 ```bash

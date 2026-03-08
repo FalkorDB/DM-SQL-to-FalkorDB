@@ -111,6 +111,24 @@ cargo run --release --   --config sqlserver_sample_to_falkordb.yaml
 ```
 
 ## Running
+### Scaffold mappings from source schema (new)
+Generate a schema summary:
+```bash
+cargo run --release -- \
+  --config sqlserver.incremental.yaml \
+  --introspect-schema
+```
+Generate a starter YAML template:
+```bash
+cargo run --release -- \
+  --config sqlserver.incremental.yaml \
+  --generate-template \
+  --output sqlserver.generated.template.yaml
+```
+Notes:
+- Scaffold flags are read-only against the source and do not execute migration.
+- Scaffold mode cannot be combined with daemon/purge flags.
+- The generated template is a starting point and should be reviewed before production use.
 ### Single run
 ```bash
 cargo run --release --   --config sqlserver.incremental.yaml

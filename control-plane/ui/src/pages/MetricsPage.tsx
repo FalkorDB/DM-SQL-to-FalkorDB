@@ -126,10 +126,10 @@ export default function MetricsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Metrics</h1>
         <button
-          className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
+          className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
           onClick={() => void fetchMetrics()}
           disabled={!selectedToolId || refreshing}
         >
@@ -137,7 +137,7 @@ export default function MetricsPage() {
         </button>
       </div>
 
-      <div className="Panel p-4">
+      <div className="Panel p-2">
         <div className="text-sm text-foreground/70 mb-2">Select tool</div>
         <div className="flex flex-wrap gap-2">
           {tools.map((t) => (
@@ -159,8 +159,8 @@ export default function MetricsPage() {
         <div className="text-foreground/70">Loading metrics…</div>
       ) : (
         <>
-          <section className="Panel p-4 space-y-2">
-            <div className="flex items-center justify-between gap-3">
+          <section className="Panel p-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="font-semibold">{metrics.display_name}</div>
                 <div className="text-sm text-foreground/70">tool id: {metrics.tool_id}</div>
@@ -203,9 +203,9 @@ export default function MetricsPage() {
 
           {hasMetricsSupport && !metrics.error ? (
             <>
-              <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <section className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {overallRows.map(([name, value]) => (
-                  <div key={name} className="Panel p-3">
+                  <div key={name} className="Panel p-2">
                     <div className="text-xs text-foreground/60">{name}</div>
                     <div className="text-xl font-semibold mt-1">{formatMetricValue(value)}</div>
                   </div>
@@ -215,7 +215,7 @@ export default function MetricsPage() {
                 ) : null}
               </section>
 
-              <section className="Panel p-4">
+              <section className="Panel p-2">
                 <div className="flex items-center justify-between mb-3">
                   <div className="font-semibold">Per-mapping metrics</div>
                   {selectedToolId ? (
@@ -235,9 +235,9 @@ export default function MetricsPage() {
                     <table className="min-w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
-                          <th className="text-left px-3 py-2 border-b border-border">mapping</th>
+                          <th className="text-left px-2 py-1 border-b border-border">mapping</th>
                           {mappingColumns.map((c) => (
-                            <th key={c} className="text-left px-3 py-2 border-b border-border">
+                            <th key={c} className="text-left px-2 py-1 border-b border-border">
                               {c}
                             </th>
                           ))}
@@ -246,9 +246,9 @@ export default function MetricsPage() {
                       <tbody>
                         {mappingRows.map(([mapping, values]) => (
                           <tr key={mapping}>
-                            <td className="px-3 py-2 border-b border-border">{mapping}</td>
+                            <td className="px-2 py-1 border-b border-border">{mapping}</td>
                             {mappingColumns.map((c) => (
-                              <td key={c} className="px-3 py-2 border-b border-border">
+                              <td key={c} className="px-2 py-1 border-b border-border">
                                 {values[c] === undefined ? '—' : formatMetricValue(values[c])}
                               </td>
                             ))}

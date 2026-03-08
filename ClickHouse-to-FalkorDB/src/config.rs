@@ -1,7 +1,7 @@
 use std::{env, fs, path::Path};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Top-level config: multi-mapping, optional incremental mode, JSON or YAML.
 #[derive(Debug, Deserialize)]
@@ -9,6 +9,7 @@ pub struct Config {
     pub clickhouse: Option<ClickHouseConfig>,
     pub falkordb: FalkorConfig,
     pub state: Option<StateConfig>,
+    #[serde(default)]
     pub mappings: Vec<EntityMapping>,
 }
 
@@ -158,7 +159,7 @@ pub struct EdgeMappingConfig {
     pub properties: std::collections::HashMap<String, PropertySpec>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum EdgeDirection {
     Out,

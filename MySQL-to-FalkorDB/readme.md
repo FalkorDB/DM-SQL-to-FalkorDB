@@ -154,6 +154,24 @@ Expected behavior:
 - New order and order-item relationships are added.
 - Product `103` is deleted from the graph due to `is_deleted = 1` (soft-delete rule in `delta`).
 ## Running
+### Scaffold mappings from source schema (new)
+Generate a schema summary:
+```bash
+cargo run --release -- \
+  --config mysql.incremental.yaml \
+  --introspect-schema
+```
+Generate a starter YAML template:
+```bash
+cargo run --release -- \
+  --config mysql.incremental.yaml \
+  --generate-template \
+  --output mysql.generated.template.yaml
+```
+Notes:
+- Scaffold flags are read-only against the source and do not execute migration.
+- Scaffold mode cannot be combined with daemon/purge flags.
+- The generated template is a starting point and should be reviewed before production use.
 ### Single run
 ```bash
 cargo run --release -- \

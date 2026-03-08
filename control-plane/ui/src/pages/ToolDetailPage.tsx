@@ -156,7 +156,7 @@ export default function ToolDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm text-foreground/60">Tool</div>
           <h1 className="text-2xl font-semibold">{tool.displayName}</h1>
@@ -167,23 +167,23 @@ export default function ToolDetailPage() {
         <div className="flex items-center gap-2">
           <Link
             to={`/metrics?tool_id=${encodeURIComponent(tool.id)}`}
-            className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+            className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
           >
             Metrics
           </Link>
           <Link
             to={`/configs/new?tool_id=${encodeURIComponent(tool.id)}`}
-            className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+            className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
           >
             New config
           </Link>
         </div>
       </div>
 
-      <section className="Panel p-4 space-y-4">
+      <section className="Panel p-2 space-y-4">
         <div className="font-semibold">Start run</div>
 
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-sm text-foreground/70">Import config from file</div>
             <div className="text-xs text-foreground/50">
@@ -209,7 +209,7 @@ export default function ToolDetailPage() {
             />
             <button
               type="button"
-              className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
+              className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
               onClick={() => fileInputRef.current?.click()}
               disabled={busy}
             >
@@ -221,7 +221,7 @@ export default function ToolDetailPage() {
         <label className="block text-sm">
           <div className="text-foreground/70 mb-1">Config</div>
           <select
-            className="w-full bg-background border border-border rounded-md px-3 py-2"
+            className="w-full bg-background border border-border rounded-md px-2 py-1"
             value={selectedConfigId}
             onChange={(e) => setSelectedConfigId(e.target.value)}
           >
@@ -234,8 +234,8 @@ export default function ToolDetailPage() {
         </label>
 
         {configState ? (
-          <div className="rounded-md border border-border bg-background p-3 text-sm">
-            <div className="flex items-start justify-between gap-3">
+          <div className="rounded-md border border-border bg-background p-2 text-sm">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold">Incremental state</div>
                 <div className="text-foreground/70 mt-1">
@@ -245,7 +245,7 @@ export default function ToolDetailPage() {
 
               <button
                 type="button"
-                className="px-3 py-2 rounded-md text-xs border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                className="px-2 py-1 rounded-md text-xs border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
                 onClick={clearState}
                 disabled={clearingState || configState.backend !== 'file'}
                 title={
@@ -291,11 +291,11 @@ export default function ToolDetailPage() {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <label className="block text-sm">
             <div className="text-foreground/70 mb-1">Mode</div>
             <select
-              className="w-full bg-background border border-border rounded-md px-3 py-2"
+              className="w-full bg-background border border-border rounded-md px-2 py-1"
               value={mode}
               onChange={(e) => setMode(e.target.value as RunMode)}
             >
@@ -309,7 +309,7 @@ export default function ToolDetailPage() {
               <div className="text-foreground/70 mb-1">Interval (secs)</div>
               <input
                 type="number"
-                className="w-full bg-background border border-border rounded-md px-3 py-2"
+                className="w-full bg-background border border-border rounded-md px-2 py-1"
                 value={intervalSecs}
                 onChange={(e) => setIntervalSecs(Number(e.target.value))}
                 min={1}
@@ -335,7 +335,7 @@ export default function ToolDetailPage() {
               Purge mappings (comma-separated)
             </div>
             <input
-              className="w-full bg-background border border-border rounded-md px-3 py-2"
+              className="w-full bg-background border border-border rounded-md px-2 py-1"
               placeholder="customers, customer_orders"
               value={purgeMappings}
               onChange={(e) => setPurgeMappings(e.target.value)}
@@ -343,9 +343,9 @@ export default function ToolDetailPage() {
           </label>
         ) : null}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
-            className="px-4 py-2 rounded-md text-sm border border-primary text-primary hover:bg-primary/10 disabled:opacity-50"
+            className="px-2 py-1 rounded-md text-sm border border-primary text-primary hover:bg-primary/10 disabled:opacity-50"
             onClick={startRun}
             disabled={busy}
           >
@@ -354,14 +354,14 @@ export default function ToolDetailPage() {
 
           <Link
             to="/runs"
-            className="px-4 py-2 rounded-md text-sm border border-border hover:border-primary"
+            className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
           >
             View runs
           </Link>
         </div>
       </section>
 
-      <section className="Panel p-4">
+      <section className="Panel p-2">
         <div className="font-semibold mb-2">Example configs</div>
         {tool.config.examples.length === 0 ? (
           <div className="text-sm text-foreground/70">No examples listed.</div>

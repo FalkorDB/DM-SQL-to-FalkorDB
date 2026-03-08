@@ -49,6 +49,16 @@ export type RunRecord = {
   error?: string | null
 }
 
+export type GenerateScaffoldTemplateRequest = {
+  config_content: string
+  include_schema_summary?: boolean
+}
+
+export type GenerateScaffoldTemplateResponse = {
+  template_yaml: string
+  schema_summary?: string | null
+}
+
 export type CreateConfigRequest = {
   tool_id: string
   name: string

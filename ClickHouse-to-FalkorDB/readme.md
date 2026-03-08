@@ -105,6 +105,25 @@ cargo run --release -- \
   --config clickhouse.incremental.yaml
 ```
 
+### Scaffold from ClickHouse schema
+
+Print normalized schema summary:
+
+```bash
+cargo run --release -- \
+  --config clickhouse.incremental.yaml \
+  --introspect-schema
+```
+
+Generate starter mapping template:
+
+```bash
+cargo run --release -- \
+  --config clickhouse.incremental.yaml \
+  --generate-template \
+  --output clickhouse.scaffold.yaml
+```
+
 ### Purge full graph before load
 
 ```bash

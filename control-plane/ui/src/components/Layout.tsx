@@ -9,7 +9,7 @@ function NavItem({ to, label }: { to: string; label: string }) {
       to={to}
       className={({ isActive }) =>
         [
-          'px-3 py-2 rounded-md text-sm border',
+          'px-2 py-1 rounded-md text-sm border',
           isActive
             ? 'border-primary text-primary'
             : 'border-transparent text-foreground/80 hover:text-foreground hover:border-border',
@@ -68,8 +68,8 @@ export default function Layout() {
     <div className="min-h-full">
       <header className="border-b border-border">
         <div className="Gradient h-1" />
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto max-w-6xl px-2 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <a
               href="https://www.falkordb.com"
               target="_blank"
@@ -103,19 +103,19 @@ export default function Layout() {
 
           <div className="flex items-center gap-2">
             <button
-              className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+              className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
               onClick={() => setAboutOpen(true)}
             >
               About
             </button>
             <button
-              className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+              className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
               onClick={setApiKey}
             >
               API key
             </button>
             <button
-              className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+              className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
               onClick={toggleTheme}
             >
               {theme === 'dark' ? 'Light mode' : 'Dark mode'}
@@ -124,23 +124,23 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-2 py-3">
         <Outlet />
       </main>
 
       {aboutOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-2"
           role="dialog"
           aria-modal="true"
           aria-labelledby="about-dialog-title"
           onClick={() => setAboutOpen(false)}
         >
           <div
-            className="Panel w-full max-w-xl p-5 shadow-2xl"
+            className="Panel w-full max-w-xl p-2 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <h2 id="about-dialog-title" className="text-lg font-semibold">
                   About FalkorDB Data Migration tools

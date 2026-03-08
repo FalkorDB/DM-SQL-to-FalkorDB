@@ -26,12 +26,12 @@ export default function ToolsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Tools</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {tools.map((t) => (
           <Link
             key={t.id}
             to={`/tools/${t.id}`}
-            className="Panel p-4 hover:border-primary transition-colors"
+            className="Panel p-2 hover:border-primary transition-colors"
           >
             <div className="flex items-center justify-between">
               <div>

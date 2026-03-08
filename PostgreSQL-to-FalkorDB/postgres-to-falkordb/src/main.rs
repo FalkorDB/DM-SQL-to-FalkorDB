@@ -3,10 +3,12 @@ mod cypher;
 mod mapping;
 mod metrics;
 mod orchestrator;
+mod scaffold;
 mod sink;
 mod sink_async;
 mod source;
 mod state;
+use std::fs;
 
 use std::path::PathBuf;
 
@@ -39,6 +41,18 @@ struct Cli {
     /// Port to expose Prometheus-style metrics on.
     #[arg(long, env = "POSTGRES_TO_FALKORDB_METRICS_PORT", default_value_t = 9993)]
     metrics_port: u16,
+
+    /// Introspect source PostgreSQL schema and print a normalized summary.
+    #[arg(long)]
+    introspect_schema: bool,
+
+    /// Generate a YAML template mapping from source schema.
+    #[arg(long)]
+    generate_template: bool,
+
+    /// Output path for generated template YAML (stdout if omitted).
+    #[arg(long, value_name = "PATH")]
+    output: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -52,6 +66,32 @@ async fn main() -> Result<()> {
         let addr = ([0, 0, 0, 0], metrics_port).into();
         serve_metrics(addr).await;
     });
+    if cli.introspect_schema || cli.generate_template {
+        if cli.daemon {
+            anyhow::bail!(
+                "Scaffold mode flags (--introspect-schema/--generate-template) cannot be combined with --daemon"
+            );
+        }
+        if cli.output.is_some() && !cli.generate_template {
+            anyhow::bail!("--output requires --generate-template");
+        }
+
+        let result = scaffold::introspect_postgres_schema(&cfg).await?;
+        if cli.introspect_schema {
+            let schema_yaml = serde_yaml::to_string(&result.schema)?;
+            println!("{schema_yaml}");
+        }
+        if cli.generate_template {
+            let template_yaml = scaffold::generate_template_yaml(&cfg, &result.schema)?;
+            if let Some(path) = &cli.output {
+                fs::write(path, template_yaml)?;
+                println!("Template written to {}", path.display());
+            } else {
+                println!("{template_yaml}");
+            }
+        }
+        return Ok(());
+    }
 
     if cli.daemon {
         run_daemon(&cfg, cli.interval_secs).await?;

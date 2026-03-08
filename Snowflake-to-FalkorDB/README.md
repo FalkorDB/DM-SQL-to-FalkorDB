@@ -135,6 +135,25 @@ cargo run --release -- \
   --config path/to/config.yaml
 ```
 
+### Scaffold from Snowflake schema
+
+Print normalized schema summary:
+
+```bash
+cargo run --release -- \
+  --config path/to/config.yaml \
+  --introspect-schema
+```
+
+Generate starter mapping template:
+
+```bash
+cargo run --release -- \
+  --config path/to/config.yaml \
+  --generate-template \
+  --output snowflake.scaffold.yaml
+```
+
 This will:
 
 1. Connect to Snowflake and FalkorDB.

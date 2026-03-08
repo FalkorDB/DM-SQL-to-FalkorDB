@@ -21,6 +21,7 @@ It includes a control plane web tool to initiate and track data migration runs.
 - Location: `ClickHouse-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from ClickHouse into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
 - Documentation: [ClickHouse-to-FalkorDB/readme.md](ClickHouse-to-FalkorDB/readme.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
 Quick start (from the crate directory):
 
@@ -40,6 +41,7 @@ cargo run --release -- --config clickhouse.incremental.yaml --daemon --interval-
 - Location: `Databricks-to-FalkorDB/`
 - What it does: Loads and incrementally syncs tabular data from Databricks (Databricks SQL / warehouses) into FalkorDB based on a JSON/YAML mapping config.
 - Documentation: [Databricks-to-FalkorDB/README.md](Databricks-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
 Quick start (from the crate directory):
 
@@ -58,6 +60,7 @@ Most configs reference environment variables for secrets (for example `$DATABRIC
 - Location: `MariaDB-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
 - Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `MariaDB-to-FalkorDB/sample_data/` + `MariaDB-to-FalkorDB/mariadb_sample_to_falkordb.yaml`
 
 Quick start (from the crate directory):
@@ -78,6 +81,7 @@ cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-sec
 - Location: `MySQL-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from MySQL into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
 - Documentation: [MySQL-to-FalkorDB/readme.md](MySQL-to-FalkorDB/readme.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `MySQL-to-FalkorDB/sample_data/` + `MySQL-to-FalkorDB/mysql_sample_to_falkordb.yaml`
 
 Quick start (from the crate directory):
@@ -98,6 +102,7 @@ cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 
 - Location: `PostgreSQL-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from PostgreSQL into FalkorDB (supports full or incremental mode; optional daemon mode).
 - Documentation: [PostgreSQL-to-FalkorDB/README.md](PostgreSQL-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
 Quick start (from the crate directory):
 
@@ -117,6 +122,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 - Location: `Snowflake-to-FalkorDB/`
 - What it does: Migrates and continuously syncs structured data from Snowflake into FalkorDB (supports incremental watermarks, optional purge modes, and daemon mode).
 - Documentation: [Snowflake-to-FalkorDB/README.md](Snowflake-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 
 Quick start (from the crate directory):
 
@@ -136,6 +142,7 @@ cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
 - Location: `SQLServer-to-FalkorDB/`
 - What it does: Migrates and continuously syncs data from SQL Server into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
 - Documentation: [SQLServer-to-FalkorDB/readme.md](SQLServer-to-FalkorDB/readme.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - End-to-end sample: `SQLServer-to-FalkorDB/sample_data/` + `SQLServer-to-FalkorDB/sqlserver_sample_to_falkordb.yaml`
 
 Quick start (from the crate directory):
@@ -206,6 +213,7 @@ Selected API endpoints:
 
 - `GET /api/health`
 - `GET /api/tools`, `GET /api/tools/:tool_id`
+- `POST /api/tools/:tool_id/scaffold-template` (generate mapping template from source schema for supported tools)
 - `GET /api/configs`, `POST /api/configs`
 - `GET /api/configs/:config_id`, `PUT /api/configs/:config_id`
 - `GET /api/configs/:config_id/state`, `POST /api/configs/:config_id/state/clear`
@@ -375,6 +383,53 @@ Minimal example:
 - **Incremental sync**: When configured with a watermark column (e.g. `updated_at`), the loader fetches only rows newer than the last successful run.
 - **Soft deletes (optional)**: A configured deleted-flag column/value can be interpreted as deletes in FalkorDB.
 - **State**: Watermarks are typically stored in a file-backed state JSON so runs can resume safely.
+
+## Scaffold schema + template generation behavior
+
+Most SQL-style loaders in this repository support scaffold mode:
+
+- MySQL
+- MariaDB
+- SQL Server
+- PostgreSQL
+- Snowflake
+- ClickHouse
+- Databricks
+
+Scaffold mode is exposed through CLI flags:
+
+- `--introspect-schema`: introspects source metadata and prints a normalized schema summary.
+- `--generate-template`: generates a starter YAML mapping template inferred from schema metadata.
+- `--output <path>`: writes generated template to file (otherwise prints to stdout).
+
+### How template inference works
+
+- Default rule: each table becomes a node mapping.
+- Foreign keys become edge mappings.
+- Join tables (tables dominated by FK columns) may be inferred as edge mappings with optional edge properties.
+- Key selection prefers:
+  1) primary key,
+  2) single-column unique key,
+  3) fallback first/id-like column with review notes.
+- Incremental `delta` is inferred only when common update/delete columns are found (for example `updated_at`, `last_update`, `is_deleted`).
+
+### Important expectations
+
+- Generated templates are **starter scaffolds**, not guaranteed production-ready configs.
+- Scaffold relies on schema metadata and cannot reliably infer business-specific joins that require custom `source.select` SQL.
+- You should always review and adjust:
+  - relationship names,
+  - key/property choices,
+  - incremental/delete semantics,
+  - custom edge sources that depend on multi-table joins.
+
+### Control plane scaffold flow
+
+In the control plane Config Editor:
+
+- **Preview schema** calls scaffold introspection and shows extracted schema.
+- **Generate template** calls scaffold template generation and shows generated YAML.
+- **Use as config** copies generated template into the editable config tab.
 
 ## FalkorDB connection
 

@@ -35,13 +35,13 @@ export default function ConfigsPage() {
         <h1 className="text-2xl font-semibold">Configs</h1>
         <Link
           to={toolId ? `/configs/new?tool_id=${encodeURIComponent(toolId)}` : '/configs/new'}
-          className="px-3 py-2 rounded-md text-sm border border-border hover:border-primary"
+          className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
         >
           New config
         </Link>
       </div>
 
-      <div className="Panel p-4">
+      <div className="Panel p-2">
         <div className="text-sm text-foreground/70 mb-2">Filter by tool</div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -73,9 +73,9 @@ export default function ConfigsPage() {
           <Link
             key={c.id}
             to={`/configs/${c.id}`}
-            className="Panel p-4 block hover:border-primary transition-colors"
+            className="Panel p-2 block hover:border-primary transition-colors"
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold">{c.name}</div>
                 <div className="text-sm text-foreground/60">tool: {c.tool_id}</div>

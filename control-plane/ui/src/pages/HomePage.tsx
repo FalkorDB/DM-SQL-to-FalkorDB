@@ -10,25 +10,25 @@ export default function HomePage() {
       <div className="flex items-center gap-2">
         <Link
           to="/tools"
-          className="px-4 py-2 rounded-md text-sm border border-primary text-primary hover:bg-primary/10"
+          className="px-2 py-1 rounded-md text-sm border border-primary text-primary hover:bg-primary/10"
         >
           Tools
         </Link>
         <Link
           to="/configs"
-          className="px-4 py-2 rounded-md text-sm border border-border hover:border-primary"
+          className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
         >
           Configs
         </Link>
         <Link
           to="/runs"
-          className="px-4 py-2 rounded-md text-sm border border-border hover:border-primary"
+          className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
         >
           Runs
         </Link>
         <Link
           to="/metrics"
-          className="px-4 py-2 rounded-md text-sm border border-border hover:border-primary"
+          className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary"
         >
           Metrics
         </Link>

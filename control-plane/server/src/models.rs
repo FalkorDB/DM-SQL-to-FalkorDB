@@ -122,6 +122,19 @@ pub struct StartRunRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateScaffoldTemplateRequest {
+    pub config_content: String,
+    #[serde(default)]
+    pub include_schema_summary: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateScaffoldTemplateResponse {
+    pub template_yaml: String,
+    pub schema_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunEvent {
     State { status: RunStatus },

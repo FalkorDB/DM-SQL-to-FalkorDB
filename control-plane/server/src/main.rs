@@ -2,6 +2,7 @@ mod auth;
 mod metrics;
 mod models;
 mod runs;
+mod scaffold;
 mod store;
 mod tools;
 
@@ -84,6 +85,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(models::health))
         .route("/tools", get(tools::list_tools))
         .route("/tools/:tool_id", get(tools::get_tool))
+        .route(
+            "/tools/:tool_id/scaffold-template",
+            post(scaffold::generate_scaffold_template),
+        )
         .route("/metrics", get(metrics::list_tool_metrics))
         .route("/metrics/:tool_id", get(metrics::get_tool_metrics))
         .route("/configs", get(store::list_configs).post(store::create_config))
