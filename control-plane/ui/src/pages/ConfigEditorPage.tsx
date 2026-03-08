@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import '@falkordb/canvas'
 
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -8,10 +9,21 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView, placeholder } from '@codemirror/view'
 
 import { api } from '../lib/api'
-import type { ToolSummary } from '../lib/types'
+import type { CanvasLink, CanvasNode, ToolSummary } from '../lib/types'
 
 type ConfigSyntax = 'auto' | 'yaml' | 'json'
-type ViewerTab = 'config' | 'schema' | 'template'
+type ViewerTab = 'config' | 'schema' | 'template' | 'canvas'
+type CanvasGraphData = { nodes: CanvasNode[]; links: CanvasLink[] }
+type FalkorDBCanvasElement = HTMLElement & {
+  setData: (data: CanvasGraphData) => void
+  setConfig: (config: {
+    backgroundColor?: string
+    foregroundColor?: string
+    captionsKeys?: string[]
+    showPropertyKeyPrefix?: boolean
+  }) => void
+  zoomToFit?: (paddingMultiplier?: number) => void
+}
 
 function inferSyntax(text: string): Exclude<ConfigSyntax, 'auto'> {
   const t = text.trim()
@@ -49,16 +61,21 @@ export default function ConfigEditorPage() {
   const [activeTab, setActiveTab] = useState<ViewerTab>('config')
   const [schemaSummary, setSchemaSummary] = useState('')
   const [generatedTemplate, setGeneratedTemplate] = useState('')
+  const [canvasData, setCanvasData] = useState<CanvasGraphData | null>(null)
+  const [canvasWarnings, setCanvasWarnings] = useState<string[]>([])
+  const [canvasSource, setCanvasSource] = useState<'config' | 'template' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [generatingTemplate, setGeneratingTemplate] = useState(false)
   const [previewingSchema, setPreviewingSchema] = useState(false)
+  const [previewingGraph, setPreviewingGraph] = useState(false)
 
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark'),
   )
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const canvasRef = useRef<FalkorDBCanvasElement | null>(null)
   const nav = useNavigate()
 
   useEffect(() => {
@@ -82,6 +99,9 @@ export default function ConfigEditorPage() {
         setContent(cfg.content)
         setSchemaSummary('')
         setGeneratedTemplate('')
+        setCanvasData(null)
+        setCanvasWarnings([])
+        setCanvasSource(null)
         setActiveTab('config')
         setSyntax('auto')
       })
@@ -96,6 +116,24 @@ export default function ConfigEditorPage() {
     obs.observe(root, { attributes: true, attributeFilter: ['class'] })
     return () => obs.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'canvas' || !canvasData) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    canvas.setData(canvasData)
+    canvas.setConfig({
+      backgroundColor: isDark ? '#0B1220' : '#FFFFFF',
+      foregroundColor: isDark ? '#E5E7EB' : '#111827',
+      captionsKeys: ['node_label', 'mapping_name'],
+      showPropertyKeyPrefix: false,
+    })
+
+    if (typeof canvas.zoomToFit === 'function' && canvasData.nodes.length > 0) {
+      window.setTimeout(() => canvas.zoomToFit?.(1.05), 50)
+    }
+  }, [activeTab, canvasData, isDark])
 
   const title = isNew ? 'New config' : 'Edit config'
 
@@ -194,6 +232,29 @@ export default function ConfigEditorPage() {
       setError(String(e))
     } finally {
       setPreviewingSchema(false)
+    }
+  }
+
+  async function previewGraphSchema() {
+    setError(null)
+    if (!toolId) return setError('tool_id is required')
+    if (content.trim() === '') {
+      return setError('Provide a config before previewing graph schema')
+    }
+
+    setPreviewingGraph(true)
+    try {
+      const res = await api.tools.generateSchemaGraphPreview(toolId, {
+        config_content: content,
+      })
+      setCanvasData(res.canvas_data)
+      setCanvasWarnings(res.warnings ?? [])
+      setCanvasSource(res.source)
+      setActiveTab('canvas')
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setPreviewingGraph(false)
     }
   }
 
@@ -298,6 +359,15 @@ export default function ConfigEditorPage() {
             <button
               type="button"
               className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
+              onClick={() => void previewGraphSchema()}
+              disabled={previewingGraph}
+              title="Preview graph schema from current config mappings"
+            >
+              {previewingGraph ? 'Rendering graph…' : 'Preview graph'}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 rounded-md text-sm border border-border hover:border-primary disabled:opacity-50"
               onClick={() => void previewExtractedSchema()}
               disabled={previewingSchema || !supportsScaffold(toolId)}
               title={
@@ -377,6 +447,17 @@ export default function ConfigEditorPage() {
               onClick={() => setActiveTab('template')}
             >
               Generated template
+            </button>
+            <button
+              type="button"
+              className={`px-2 py-1 rounded-md text-xs border ${
+                activeTab === 'canvas'
+                  ? 'border-primary text-primary'
+                  : 'border-border hover:border-primary'
+              }`}
+              onClick={() => setActiveTab('canvas')}
+            >
+              Graph visualization
             </button>
           </div>
           <label className="block text-sm min-w-80">
@@ -490,6 +571,48 @@ export default function ConfigEditorPage() {
                   highlightActiveLineGutter: false,
                 }}
               />
+            </div>
+          </label>
+        ) : null}
+
+        {activeTab === 'canvas' ? (
+          <label className="block text-sm">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-foreground/70">
+                Graph visualization
+                {canvasSource ? (
+                  <span className="ml-2 text-[11px] text-foreground/60">Source: {canvasSource}</span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="px-2 py-1 rounded-md text-xs border border-border hover:border-primary"
+                onClick={() => {
+                  setCanvasData(null)
+                  setCanvasWarnings([])
+                  setCanvasSource(null)
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            {canvasWarnings.length > 0 ? (
+              <div className="mb-2 p-2 rounded-md border border-border bg-background/40 text-xs space-y-1">
+                {canvasWarnings.map((warning) => (
+                  <div key={warning} className="text-foreground/80">
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="border border-border rounded-md overflow-hidden h-[420px]">
+              {canvasData && (canvasData.nodes.length > 0 || canvasData.links.length > 0) ? (
+                <falkordb-canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-foreground/60 text-sm px-4 text-center">
+                  No graph visualization available yet. Click 'Preview graph'.
+                </div>
+              )}
             </div>
           </label>
         ) : null}

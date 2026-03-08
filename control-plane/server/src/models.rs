@@ -135,11 +135,66 @@ pub struct GenerateScaffoldTemplateResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateSchemaGraphPreviewRequest {
+    pub config_content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SchemaGraphPreviewSource {
+    Config,
+    Template,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasData {
+    pub nodes: Vec<CanvasNode>,
+    pub links: Vec<CanvasLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasNode {
+    pub id: u64,
+    pub labels: Vec<String>,
+    pub color: String,
+    pub visible: bool,
+    pub caption: Option<String>,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasLink {
+    pub id: u64,
+    pub relationship: String,
+    pub color: String,
+    pub source: u64,
+    pub target: u64,
+    pub visible: bool,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateSchemaGraphPreviewResponse {
+    pub canvas_data: CanvasData,
+    pub warnings: Vec<String>,
+    pub source: SchemaGraphPreviewSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunEvent {
-    State { status: RunStatus },
-    Log { stream: String, line: String },
-    Exit { status: RunStatus, exit_code: Option<i64>, error: Option<String> },
+    State {
+        status: RunStatus,
+    },
+    Log {
+        stream: String,
+        line: String,
+    },
+    Exit {
+        status: RunStatus,
+        exit_code: Option<i64>,
+        error: Option<String>,
+    },
 }
 
 pub fn not_found<T>() -> Result<T, (StatusCode, String)> {

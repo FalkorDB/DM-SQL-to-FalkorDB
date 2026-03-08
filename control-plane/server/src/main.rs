@@ -78,7 +78,9 @@ async fn main() -> anyhow::Result<()> {
         tools,
         store,
         runs,
-        api_key: std::env::var("CONTROL_PLANE_API_KEY").ok().filter(|v| !v.is_empty()),
+        api_key: std::env::var("CONTROL_PLANE_API_KEY")
+            .ok()
+            .filter(|v| !v.is_empty()),
     };
 
     let api_routes = Router::new()
@@ -89,9 +91,16 @@ async fn main() -> anyhow::Result<()> {
             "/tools/:tool_id/scaffold-template",
             post(scaffold::generate_scaffold_template),
         )
+        .route(
+            "/tools/:tool_id/schema-graph-preview",
+            post(scaffold::generate_schema_graph_preview),
+        )
         .route("/metrics", get(metrics::list_tool_metrics))
         .route("/metrics/:tool_id", get(metrics::get_tool_metrics))
-        .route("/configs", get(store::list_configs).post(store::create_config))
+        .route(
+            "/configs",
+            get(store::list_configs).post(store::create_config),
+        )
         .route(
             "/configs/:config_id",
             get(store::get_config).put(store::update_config),
@@ -113,7 +122,12 @@ async fn main() -> anyhow::Result<()> {
             app_state.clone(),
             auth::require_api_key,
         ))
-        .layer(CorsLayer::new().allow_origin(Any).allow_headers(Any).allow_methods(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_headers(Any)
+                .allow_methods(Any),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(app_state.clone());
 

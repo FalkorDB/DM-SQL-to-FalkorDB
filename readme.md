@@ -211,6 +211,8 @@ Configuration:
 Notes:
 
 - The config editor supports YAML/JSON syntax highlighting (Auto/YAML/JSON selector).
+- The config editor provides 4 viewer tabs: **Config file**, **Extracted schema**, **Generated template**, and **Graph visualization**.
+- **Graph visualization** is derived from the selected config file mappings (config-first), with scaffold-template fallback only when mappings are missing/unusable.
 - The UI has an "API key" button that stores the key in browser localStorage.
 - The log stream endpoint uses Server-Sent Events. Since `EventSource` can’t set headers, the UI falls back to `?api_key=<token>` for SSE when an API key is configured.
 - Runtime data lives under `CONTROL_PLANE_DATA_DIR` (by default `control-plane/data/`), including a SQLite DB (`control-plane.sqlite`) and per-run artifacts/logs under `runs/<run_id>/`.
@@ -222,6 +224,7 @@ Selected API endpoints:
 - `GET /api/health`
 - `GET /api/tools`, `GET /api/tools/:tool_id`
 - `POST /api/tools/:tool_id/scaffold-template` (generate mapping template from source schema for supported tools)
+- `POST /api/tools/:tool_id/schema-graph-preview` (build canvas graph preview from config mappings; returns warnings and derivation source)
 - `GET /api/configs`, `POST /api/configs`
 - `GET /api/configs/:config_id`, `PUT /api/configs/:config_id`
 - `GET /api/configs/:config_id/state`, `POST /api/configs/:config_id/state/clear`
@@ -438,6 +441,7 @@ In the control plane Config Editor:
 - **Preview schema** calls scaffold introspection and shows extracted schema.
 - **Generate template** calls scaffold template generation and shows generated YAML.
 - **Use as config** copies generated template into the editable config tab.
+- **Preview graph** renders graph topology in the Graph visualization tab from the selected config mappings (`node`/`edge`), including non-fatal warnings for partial mappings.
 
 ## FalkorDB connection
 

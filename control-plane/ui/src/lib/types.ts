@@ -59,6 +59,38 @@ export type GenerateScaffoldTemplateResponse = {
   schema_summary?: string | null
 }
 
+export type CanvasNode = {
+  id: number
+  labels: string[]
+  color: string
+  visible: boolean
+  caption?: string | null
+  data: Record<string, unknown>
+}
+
+export type CanvasLink = {
+  id: number
+  relationship: string
+  color: string
+  source: number
+  target: number
+  visible: boolean
+  data: Record<string, unknown>
+}
+
+export type GenerateSchemaGraphPreviewRequest = {
+  config_content: string
+}
+
+export type GenerateSchemaGraphPreviewResponse = {
+  canvas_data: {
+    nodes: CanvasNode[]
+    links: CanvasLink[]
+  }
+  warnings: string[]
+  source: 'config' | 'template'
+}
+
 export type CreateConfigRequest = {
   tool_id: string
   name: string

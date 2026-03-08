@@ -4,6 +4,8 @@ import type {
   CreateConfigRequest,
   GenerateScaffoldTemplateRequest,
   GenerateScaffoldTemplateResponse,
+  GenerateSchemaGraphPreviewRequest,
+  GenerateSchemaGraphPreviewResponse,
   RunEvent,
   RunRecord,
   StartRunRequest,
@@ -58,6 +60,11 @@ export const api = {
     get: (toolId: string) => apiFetch<ToolManifest>(`/api/tools/${toolId}`),
     generateScaffoldTemplate: (toolId: string, req: GenerateScaffoldTemplateRequest) =>
       apiFetch<GenerateScaffoldTemplateResponse>(`/api/tools/${toolId}/scaffold-template`, {
+        method: 'POST',
+        body: JSON.stringify(req),
+      }),
+    generateSchemaGraphPreview: (toolId: string, req: GenerateSchemaGraphPreviewRequest) =>
+      apiFetch<GenerateSchemaGraphPreviewResponse>(`/api/tools/${toolId}/schema-graph-preview`, {
         method: 'POST',
         body: JSON.stringify(req),
       }),

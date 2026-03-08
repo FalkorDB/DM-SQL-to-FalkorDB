@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@falkordb/canvas": "^0.0.43",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-yaml": "^6.1.1",
     "@codemirror/theme-one-dark": "^6.1.3",
