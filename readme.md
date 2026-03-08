@@ -12,7 +12,8 @@ It includes a control plane web tool to initiate and track data migration runs.
 
 ## Tools
 
-<img width="1146" height="759" alt="DM-UI-7-tools-about" src="https://github.com/user-attachments/assets/28d1b773-5013-49b7-9de9-1675d49edabf" />
+<img width="1146" height="630" alt="dm-ui-7-tools-narrow" src="https://github.com/user-attachments/assets/0a3b8d2e-3e32-4a63-bf41-278d82b413aa" />
+
 
 
 
