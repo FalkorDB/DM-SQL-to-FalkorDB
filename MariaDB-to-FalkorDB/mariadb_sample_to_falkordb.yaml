@@ -1,17 +1,15 @@
 # Example config: load the MariaDB sample commerce dataset into FalkorDB
 #
 # Usage:
-#   export MARIADB_URL="mysql://root:password@localhost:3306/mariadb_falkordb_sample"
-#   export FALKORDB_ENDPOINT="falkor://127.0.0.1:6379"
 #   cargo run --release -- --config mariadb_sample_to_falkordb.yaml
 
 mariadb:
-  url: "$MARIADB_URL"
+  url: "mysql://falkor_migrator@127.0.0.1:3306/mariadb_falkordb_sample"
   fetch_batch_size: 10000
   query_timeout_ms: 60000
 
 falkordb:
-  endpoint: "$FALKORDB_ENDPOINT"
+  endpoint: "falkor://127.0.0.1:6379"
   graph: "mariadb_sample_graph"
   max_unwind_batch_size: 1000
 

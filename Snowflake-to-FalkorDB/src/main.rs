@@ -20,6 +20,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::Config;
 use crate::metrics::serve_metrics;
 use crate::orchestrator::{run_daemon, run_once};
+const SINGLE_RUN_METRICS_GRACE_PERIOD_SECS: u64 = 10;
 
 /// CLI for phase 2+: supports multi-mapping, async writes, purge, and daemon mode.
 #[derive(Debug, Parser)]
@@ -110,7 +111,12 @@ async fn main() -> Result<()> {
     if cli.daemon {
         run_daemon(&cfg, cli.purge_graph, &cli.purge_mapping, cli.interval_secs).await?;
     } else {
-        run_once(&cfg, cli.purge_graph, &cli.purge_mapping).await?;
+        let run_result = run_once(&cfg, cli.purge_graph, &cli.purge_mapping).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(
+            SINGLE_RUN_METRICS_GRACE_PERIOD_SECS,
+        ))
+        .await;
+        run_result?;
     }
 
     println!("Load completed successfully.");

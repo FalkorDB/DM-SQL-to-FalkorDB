@@ -18,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::metrics::{serve_metrics, METRICS};
+const SINGLE_RUN_METRICS_GRACE_PERIOD_SECS: u64 = 10;
 
 #[derive(Parser, Debug)]
 #[command(name = "databricks-to-falkordb")]
@@ -81,10 +82,15 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    if let Err(e) = orchestrator::run_once(&cfg).await {
+    let run_result = orchestrator::run_once(&cfg).await;
+    if run_result.is_err() {
         METRICS.inc_failed_runs();
-        return Err(e);
     }
+    tokio::time::sleep(tokio::time::Duration::from_secs(
+        SINGLE_RUN_METRICS_GRACE_PERIOD_SECS,
+    ))
+    .await;
+    run_result?;
 
     Ok(())
 }
