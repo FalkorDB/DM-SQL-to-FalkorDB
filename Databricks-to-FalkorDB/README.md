@@ -13,7 +13,7 @@ The design mirrors the Snowflake-to-FalkorDB loader: you describe how Databricks
   - Supports `--introspect-schema` and `--generate-template` to derive starter mappings from Databricks metadata.
 - **FalkorDB sink**
   - Writes nodes and edges using Cypher `UNWIND` + `MERGE`.
-  - Automatically creates indexes on node key properties for better MERGE/MATCH performance.
+  - Applies explicit `falkordb.indexes` plus implicit indexes on node keys and edge endpoint `match_on` properties for better MERGE/MATCH performance.
 - **Incremental sync with delta**
   - Per-mapping `mode: full` or `mode: incremental`.
   - Watermark column (`delta.updated_at_column`) used to fetch only new/updated rows.
@@ -50,6 +50,11 @@ falkordb:
   endpoint: "falkor://127.0.0.1:6379"
   graph: "databricks_graph"
   max_unwind_batch_size: 1000
+  indexes:                        # optional explicit FalkorDB indexes
+    - labels: ["Customer"]
+      property: "id"
+      source_table: "main.default.customers"  # optional provenance metadata
+      source_columns: ["id"]                  # optional provenance metadata
 
 state:
   backend: file
@@ -277,6 +282,7 @@ With this configuration:
 - `endpoint`: FalkorDB connection string, e.g. `falkor://127.0.0.1:6379`.
 - `graph`: target graph name.
 - `max_unwind_batch_size`: max rows per UNWIND batch when writing.
+- `indexes`: optional explicit FalkorDB indexes (`labels`, `property`, optional source provenance).
 
 ### `state` section
 
@@ -344,5 +350,6 @@ Tests include:
 - Only the Databricks SQL Statement Execution API is supported (no streaming/CDC yet).
 - Delta support is based on a single `updated_at_column` per mapping; advanced scenarios (e.g. Databricks change data feed) are not yet wired.
 - `state.backend: falkordb` is not implemented yet; today only file-backed state is supported.
+- Source-side index metadata in scaffold output is best-effort and currently inferred from PK/UNIQUE constraints when available.
 
 Despite these limitations, the tool is suitable for many batch and incremental loading scenarios from Databricks into FalkorDB.

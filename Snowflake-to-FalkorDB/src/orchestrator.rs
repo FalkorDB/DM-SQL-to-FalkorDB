@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 
-use crate::config::{Config, EntityMapping, NodeMappingConfig};
+use crate::config::{Config, EntityMapping, FalkorConfig, NodeMappingConfig};
 use crate::mapping::{map_rows_to_edges, map_rows_to_nodes};
 use crate::metrics::METRICS;
 use crate::sink::MappedNode;
@@ -79,54 +79,127 @@ async fn purge_graph(graph: &mut falkordb::AsyncGraph) -> Result<()> {
     Ok(())
 }
 
-/// Ensure indexes exist for node key properties used in MERGE/MATCH.
-///
-/// For each node mapping, we create an index on (labels, key.property). We de-duplicate
-/// by (labels, property) combination and treat failures as non-fatal (for example,
-/// when the index already exists on the server).
-async fn ensure_node_indexes(
+/// Ensure indexes exist for explicit config indexes plus node/edge key-match properties.
+async fn ensure_falkordb_indexes(
     graph: &mut falkordb::AsyncGraph,
     mappings: &[EntityMapping],
+    node_by_name: &HashMap<&str, &NodeMappingConfig>,
+    falkordb_cfg: &FalkorConfig,
 ) -> Result<()> {
     let mut seen: HashSet<(String, String)> = HashSet::new();
+    for index in &falkordb_cfg.indexes {
+        ensure_index(
+            graph,
+            &mut seen,
+            &index.labels,
+            &index.property,
+            "explicit_falkordb_config",
+        )
+        .await?;
+    }
 
     for mapping in mappings {
-        if let EntityMapping::Node(node_cfg) = mapping {
-            if node_cfg.labels.is_empty() {
-                continue;
+        match mapping {
+            EntityMapping::Node(node_cfg) => {
+                ensure_index(
+                    graph,
+                    &mut seen,
+                    &node_cfg.labels,
+                    &node_cfg.key.property,
+                    "node_key_property",
+                )
+                .await?;
             }
+            EntityMapping::Edge(edge_cfg) => {
+                let from_labels = if let Some(labels) = &edge_cfg.from.label_override {
+                    labels.clone()
+                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.from.node_mapping.as_str())
+                {
+                    node_cfg.labels.clone()
+                } else {
+                    tracing::warn!(
+                        mapping = %edge_cfg.common.name,
+                        endpoint = "from",
+                        node_mapping = %edge_cfg.from.node_mapping,
+                        "Skipping edge endpoint index inference due to unknown node mapping"
+                    );
+                    Vec::new()
+                };
+                let to_labels = if let Some(labels) = &edge_cfg.to.label_override {
+                    labels.clone()
+                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.to.node_mapping.as_str()) {
+                    node_cfg.labels.clone()
+                } else {
+                    tracing::warn!(
+                        mapping = %edge_cfg.common.name,
+                        endpoint = "to",
+                        node_mapping = %edge_cfg.to.node_mapping,
+                        "Skipping edge endpoint index inference due to unknown node mapping"
+                    );
+                    Vec::new()
+                };
 
-            let label_clause = node_cfg.labels.join(":");
-            let prop = node_cfg.key.property.clone();
-            let key = (label_clause.clone(), prop.clone());
-
-            if !seen.insert(key) {
-                continue;
-            }
-
-            let cypher = format!(
-                "CREATE INDEX ON :{labels}({prop})",
-                labels = label_clause,
-                prop = prop
-            );
-
-            tracing::info!(
-                mapping = %node_cfg.common.name,
-                labels = %label_clause,
-                property = %prop,
-                "Ensuring index for node label on key property",
-            );
-
-            if let Err(e) = graph.query(&cypher).execute().await {
-                tracing::warn!(
-                    mapping = %node_cfg.common.name,
-                    labels = %label_clause,
-                    property = %prop,
-                    error = %e,
-                    "Failed to create index for node label (it may already exist)",
-                );
+                for match_on in &edge_cfg.from.match_on {
+                    ensure_index(
+                        graph,
+                        &mut seen,
+                        &from_labels,
+                        &match_on.property,
+                        "edge_from_match_property",
+                    )
+                    .await?;
+                }
+                for match_on in &edge_cfg.to.match_on {
+                    ensure_index(
+                        graph,
+                        &mut seen,
+                        &to_labels,
+                        &match_on.property,
+                        "edge_to_match_property",
+                    )
+                    .await?;
+                }
             }
         }
+    }
+
+    Ok(())
+}
+
+async fn ensure_index(
+    graph: &mut falkordb::AsyncGraph,
+    seen: &mut HashSet<(String, String)>,
+    labels: &[String],
+    property: &str,
+    reason: &str,
+) -> Result<()> {
+    if labels.is_empty() || property.trim().is_empty() {
+        return Ok(());
+    }
+    let label_clause = labels.join(":");
+    let key = (label_clause.clone(), property.to_string());
+    if !seen.insert(key) {
+        return Ok(());
+    }
+    let cypher = format!(
+        "CREATE INDEX ON :{labels}({prop})",
+        labels = label_clause,
+        prop = property
+    );
+    tracing::info!(
+        labels = %label_clause,
+        property = %property,
+        reason = %reason,
+        "Ensuring FalkorDB index"
+    );
+    if let Err(e) = graph.query(&cypher).execute().await {
+        tracing::warn!(
+            labels = %label_clause,
+            property = %property,
+            reason = %reason,
+            error = %e,
+            "Failed to create FalkorDB index (it may already exist)"
+        );
     }
 
     Ok(())
@@ -227,9 +300,7 @@ pub async fn run_once(
         }
     }
 
-    // Ensure we have indexes on node key properties before writing data. This improves
-    // MERGE/MATCH performance and is safe to run repeatedly.
-    ensure_node_indexes(&mut graph, &cfg.mappings).await?;
+    ensure_falkordb_indexes(&mut graph, &cfg.mappings, &node_by_name, &cfg.falkordb).await?;
 
     let batch_size = cfg.falkordb.max_unwind_batch_size.unwrap_or(1000).max(1);
 
@@ -489,6 +560,7 @@ mod tests {
                 endpoint,
                 graph,
                 max_unwind_batch_size: Some(10),
+                indexes: vec![],
             },
             state: Some(StateConfig {
                 backend: StateBackendKind::File,

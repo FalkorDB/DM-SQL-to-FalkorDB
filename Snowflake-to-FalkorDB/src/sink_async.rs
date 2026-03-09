@@ -542,6 +542,7 @@ mod tests {
             endpoint,
             graph,
             max_unwind_batch_size: Some(10),
+            indexes: vec![],
         };
 
         let mut graph = connect_falkordb_async(&cfg).await?;

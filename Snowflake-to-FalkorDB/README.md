@@ -53,6 +53,11 @@ falkordb:
   endpoint: "falkor://127.0.0.1:6379"
   graph: "customer_graph"
   max_unwind_batch_size: 1000
+  indexes:                         # optional explicit FalkorDB indexes
+    - labels: ["Customer"]
+      property: "customer_id"
+      source_table: "PUBLIC.CUSTOMERS"      # optional provenance metadata
+      source_columns: ["CUSTOMER_ID"]       # optional provenance metadata
 
 state:
   backend: "file"                  # or "none" / "falkordb" (file is implemented)
@@ -312,6 +317,8 @@ These metrics let you see, per mapping, how many rows were fetched, written, and
   - Node mappings: matching nodes are `DETACH DELETE`d.
   - Edge mappings: matching relationships are `DELETE`d.
 - **Ordering**: mappings are processed in the order listed; for edges, the referenced node mappings must exist in the config.
+- **Indexes**: the loader applies explicit `falkordb.indexes` plus implicit indexes for node keys and edge endpoint `match_on` properties, deduplicated per `(labels, property)`.
+- **Source index metadata**: scaffold suggestions for `falkordb.indexes` are best-effort in Snowflake and currently inferred from PK/UNIQUE constraints.
 - **Logging**: uses `tracing` with log level controlled by `RUST_LOG`, e.g. `RUST_LOG=info`.
 
 ## Troubleshooting

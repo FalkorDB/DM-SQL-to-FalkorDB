@@ -11,6 +11,57 @@ pub struct IntrospectionResult {
     pub schema: SchemaMetadata,
 }
 
+fn infer_falkordb_indexes(schema: &SchemaMetadata, draft: &GraphDraft) -> Vec<TemplateFalkorIndex> {
+    let indexed_columns_by_table: HashMap<String, HashSet<String>> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let table_key = qualified_table_key(&table.schema, &table.name);
+            let cols = table
+                .source_indexes
+                .iter()
+                .flat_map(|idx| idx.columns.iter().cloned())
+                .map(|c| c.to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            (table_key, cols)
+        })
+        .collect();
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for node in &draft.nodes {
+        let Some(indexed_columns) = indexed_columns_by_table.get(&node.table_key) else {
+            continue;
+        };
+        let labels = vec![node.label.clone()];
+        let mut candidates = vec![(node.key_property.clone(), node.key_column.clone())];
+        candidates.extend(node.properties.iter().cloned().map(|p| (p.clone(), p)));
+        for (property, source_column) in candidates {
+            if !indexed_columns.contains(&source_column.to_ascii_lowercase()) {
+                continue;
+            }
+            let dedupe_key = (labels.join(":"), property.clone());
+            if !seen.insert(dedupe_key) {
+                continue;
+            }
+            out.push(TemplateFalkorIndex {
+                labels: labels.clone(),
+                property,
+                source_table: Some(node.table_key.clone()),
+                source_columns: vec![source_column],
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.labels
+            .join(":")
+            .cmp(&b.labels.join(":"))
+            .then(a.property.cmp(&b.property))
+    });
+    out
+}
+
 fn infer_qualified_source_table(schema: &SchemaMetadata, edge: &InferredEdge) -> String {
     let source_lc = edge.source_table.to_ascii_lowercase();
     if let Some(table) = schema
@@ -41,6 +92,8 @@ pub struct TableMetadata {
     pub primary_key: Vec<String>,
     pub unique_constraints: Vec<UniqueConstraint>,
     pub foreign_keys: Vec<ForeignKeyMetadata>,
+    #[serde(default)]
+    pub source_indexes: Vec<SourceIndexMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +120,14 @@ pub struct ForeignKeyMetadata {
     pub referenced_columns: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceIndexMetadata {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub primary: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct TemplateConfig {
     postgres: TemplatePostgres,
@@ -87,6 +148,18 @@ struct TemplateFalkor {
     endpoint: String,
     graph: String,
     max_unwind_batch_size: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    indexes: Vec<TemplateFalkorIndex>,
+}
+
+#[derive(Debug, Serialize)]
+struct TemplateFalkorIndex {
+    labels: Vec<String>,
+    property: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_table: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_columns: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -225,6 +298,30 @@ pub async fn introspect_postgres_schema(cfg: &Config) -> Result<IntrospectionRes
             &[],
         )
         .await?;
+    let index_rows = client
+        .query(
+            r#"
+            SELECT
+              ns.nspname AS table_schema,
+              tbl.relname AS table_name,
+              idx.relname AS index_name,
+              i.indisunique AS is_unique,
+              i.indisprimary AS is_primary,
+              att.attname AS column_name,
+              ord.ordinality AS ordinal_position
+            FROM pg_index i
+            JOIN pg_class tbl ON tbl.oid = i.indrelid
+            JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+            JOIN pg_class idx ON idx.oid = i.indexrelid
+            JOIN unnest(i.indkey) WITH ORDINALITY AS ord(attnum, ordinality) ON true
+            JOIN pg_attribute att ON att.attrelid = tbl.oid AND att.attnum = ord.attnum
+            WHERE ns.nspname NOT IN ('pg_catalog','information_schema')
+              AND att.attnum > 0
+            ORDER BY ns.nspname, tbl.relname, idx.relname, ord.ordinality
+            "#,
+            &[],
+        )
+        .await?;
 
     let column_rows = client
         .query(
@@ -260,7 +357,6 @@ pub async fn introspect_postgres_schema(cfg: &Config) -> Result<IntrospectionRes
             &[],
         )
         .await?;
-
     let fk_rows = client
         .query(
             r#"
@@ -302,6 +398,7 @@ pub async fn introspect_postgres_schema(cfg: &Config) -> Result<IntrospectionRes
                 primary_key: Vec::new(),
                 unique_constraints: Vec::new(),
                 foreign_keys: Vec::new(),
+                source_indexes: Vec::new(),
             },
         );
     }
@@ -395,6 +492,42 @@ pub async fn introspect_postgres_schema(cfg: &Config) -> Result<IntrospectionRes
             }
             fks.sort_by(|a, b| a.name.cmp(&b.name));
             t.foreign_keys = fks;
+        }
+    }
+    let mut index_group: HashMap<TableKey, BTreeMap<String, Vec<(String, bool, bool, u64)>>> =
+        HashMap::new();
+    for row in index_rows {
+        let schema: String = row.try_get("table_schema")?;
+        let table: String = row.try_get("table_name")?;
+        let index_name: String = row.try_get("index_name")?;
+        let column_name: String = row.try_get("column_name")?;
+        let is_unique: bool = row.try_get("is_unique")?;
+        let is_primary: bool = row.try_get("is_primary")?;
+        let ordinal_position: i64 = row.try_get("ordinal_position")?;
+        index_group
+            .entry((schema, table))
+            .or_default()
+            .entry(index_name)
+            .or_default()
+            .push((column_name, is_unique, is_primary, ordinal_position as u64));
+    }
+    for ((schema, table), by_name) in index_group {
+        if let Some(t) = table_map.get_mut(&(schema, table)) {
+            let mut source_indexes = Vec::new();
+            for (index_name, mut rows) in by_name {
+                rows.sort_by_key(|v| v.3);
+                let unique = rows.first().map(|v| v.1).unwrap_or(false);
+                let primary = rows.first().map(|v| v.2).unwrap_or(false);
+                let columns = rows.into_iter().map(|v| v.0).collect::<Vec<_>>();
+                source_indexes.push(SourceIndexMetadata {
+                    name: index_name,
+                    columns,
+                    unique,
+                    primary,
+                });
+            }
+            source_indexes.sort_by(|a, b| a.name.cmp(&b.name));
+            t.source_indexes = source_indexes;
         }
     }
 
@@ -623,6 +756,7 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 cfg.falkordb.graph.clone()
             },
             max_unwind_batch_size: cfg.falkordb.max_unwind_batch_size.unwrap_or(1000),
+            indexes: infer_falkordb_indexes(schema, draft),
         },
         state: TemplateState {
             backend: "file".to_string(),
@@ -801,6 +935,7 @@ mod tests {
             primary_key: vec![],
             unique_constraints: vec![],
             foreign_keys: vec![],
+            source_indexes: vec![],
         }
     }
 

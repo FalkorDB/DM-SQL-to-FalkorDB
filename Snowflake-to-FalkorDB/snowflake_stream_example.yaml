@@ -25,6 +25,7 @@ falkordb:
   endpoint: "falkor://127.0.0.1:6379"  # Adjust to your FalkorDB instance
   graph: "customers_stream_graph"
   max_unwind_batch_size: 1000
+  indexes: []
 
 state:
   backend: "file"                   # file-backed watermarks

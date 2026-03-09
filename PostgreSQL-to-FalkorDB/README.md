@@ -14,7 +14,7 @@ The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB
   - Supports `--introspect-schema` and `--generate-template` to derive starter YAML mappings from source metadata.
 - **FalkorDB sink**
   - Writes nodes and edges using Cypher `UNWIND` + `MERGE`.
-  - Automatically creates indexes on node key properties for better MERGE/MATCH performance.
+  - Applies explicit `falkordb.indexes` plus implicit indexes on node keys and edge endpoint `match_on` properties for better MERGE/MATCH performance.
 - **Incremental sync with delta**
   - Per-mapping `mode: full` or `mode: incremental`.
   - Watermark column (`delta.updated_at_column`) used to fetch only new/updated rows.
@@ -66,6 +66,11 @@ falkordb:
   endpoint: "falkor://127.0.0.1:6379"
   graph: "postgres_graph"
   max_unwind_batch_size: 1000
+  indexes:                      # optional explicit FalkorDB indexes
+    - labels: ["Customer"]
+      property: "id"
+      source_table: "public.customers"      # optional provenance metadata
+      source_columns: ["id"]                # optional provenance metadata
 
 state:
   backend: "file"               # or "none" / "falkordb" (file is implemented)
@@ -334,7 +339,7 @@ Exposed metric names:
   - Node mappings: matching nodes are `DETACH DELETE`d.
   - Edge mappings: matching relationships are `DELETE`d.
 - **Ordering**: mappings are processed in the order listed; for edges, the referenced node mappings must exist in the config.
-- **Indexes**: for each node mapping, the tool attempts `CREATE INDEX ON :Label(...key property...)` once per `(labels, property)` pair, logging but not failing if the index already exists.
+- **Indexes**: the tool attempts `CREATE INDEX ON :Label(...property...)` for explicit `falkordb.indexes` and required implicit key/match properties, deduplicated per `(labels, property)` pair, logging but not failing if an index already exists.
 - **Logging**: uses `tracing` with log level controlled by `RUST_LOG`, e.g. `RUST_LOG=info`.
 
 ## Testing

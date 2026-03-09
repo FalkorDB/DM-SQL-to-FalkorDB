@@ -12,6 +12,67 @@ pub struct IntrospectionResult {
     pub schema: SchemaMetadata,
 }
 
+#[derive(Debug, Serialize)]
+struct TemplateFalkorIndex {
+    labels: Vec<String>,
+    property: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_table: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_columns: Vec<String>,
+}
+
+fn infer_falkordb_indexes(schema: &SchemaMetadata, draft: &GraphDraft) -> Vec<TemplateFalkorIndex> {
+    let indexed_columns_by_table: HashMap<String, HashSet<String>> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let table_key = qualified_table_key(&table.schema, &table.name);
+            let cols = table
+                .source_indexes
+                .iter()
+                .flat_map(|idx| idx.columns.iter().cloned())
+                .map(|c| c.to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            (table_key, cols)
+        })
+        .collect();
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for node in &draft.nodes {
+        let Some(indexed_columns) = indexed_columns_by_table.get(&node.table_key) else {
+            continue;
+        };
+        let labels = vec![node.label.clone()];
+        let mut candidates = vec![(node.key_property.clone(), node.key_column.clone())];
+        candidates.extend(node.properties.iter().cloned().map(|p| (p.clone(), p)));
+        for (property, source_column) in candidates {
+            if !indexed_columns.contains(&source_column.to_ascii_lowercase()) {
+                continue;
+            }
+            let dedupe_key = (labels.join(":"), property.clone());
+            if !seen.insert(dedupe_key) {
+                continue;
+            }
+            out.push(TemplateFalkorIndex {
+                labels: labels.clone(),
+                property,
+                source_table: Some(node.table_key.clone()),
+                source_columns: vec![source_column],
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.labels
+            .join(":")
+            .cmp(&b.labels.join(":"))
+            .then(a.property.cmp(&b.property))
+    });
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaMetadata {
     pub database: String,
@@ -26,6 +87,8 @@ pub struct TableMetadata {
     pub primary_key: Vec<String>,
     pub unique_constraints: Vec<UniqueConstraint>,
     pub foreign_keys: Vec<ForeignKeyMetadata>,
+    #[serde(default)]
+    pub source_indexes: Vec<SourceIndexMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +115,14 @@ pub struct ForeignKeyMetadata {
     pub referenced_columns: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceIndexMetadata {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub primary: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct TemplateConfig {
     mysql: TemplateMysql,
@@ -72,6 +143,8 @@ struct TemplateFalkor {
     endpoint: String,
     graph: String,
     max_unwind_batch_size: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    indexes: Vec<TemplateFalkorIndex>,
 }
 
 #[derive(Debug, Serialize)]
@@ -203,6 +276,7 @@ pub async fn introspect_mysql_schema(cfg: &Config) -> Result<IntrospectionResult
     let columns = fetch_columns(&mut conn, &database).await?;
     let (pk_by_table, unique_by_table) = fetch_keys(&mut conn, &database).await?;
     let fk_by_table = fetch_foreign_keys(&mut conn, &database).await?;
+    let source_indexes_by_table = fetch_source_indexes(&mut conn, &database).await?;
 
     let mut table_map: HashMap<(String, String), TableMetadata> = HashMap::new();
     for (schema, name) in tables {
@@ -215,6 +289,7 @@ pub async fn introspect_mysql_schema(cfg: &Config) -> Result<IntrospectionResult
                 primary_key: Vec::new(),
                 unique_constraints: Vec::new(),
                 foreign_keys: Vec::new(),
+                source_indexes: Vec::new(),
             },
         );
     }
@@ -242,6 +317,11 @@ pub async fn introspect_mysql_schema(cfg: &Config) -> Result<IntrospectionResult
     for ((schema, table), fks) in fk_by_table {
         if let Some(t) = table_map.get_mut(&(schema, table)) {
             t.foreign_keys = fks;
+        }
+    }
+    for ((schema, table), source_indexes) in source_indexes_by_table {
+        if let Some(t) = table_map.get_mut(&(schema, table)) {
+            t.source_indexes = source_indexes;
         }
     }
 
@@ -521,6 +601,7 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 graph_name
             },
             max_unwind_batch_size: cfg.falkordb.max_unwind_batch_size.unwrap_or(1000),
+            indexes: infer_falkordb_indexes(schema, draft),
         },
         state: TemplateState {
             backend: "file".to_string(),
@@ -749,6 +830,7 @@ async fn fetch_columns(
 
 type KeysByTable = HashMap<(String, String), Vec<String>>;
 type UniquesByTable = HashMap<(String, String), Vec<UniqueConstraint>>;
+type SourceIndexesByTable = HashMap<(String, String), Vec<SourceIndexMetadata>>;
 
 async fn fetch_keys(
     conn: &mut mysql_async::Conn,
@@ -877,6 +959,59 @@ async fn fetch_foreign_keys(
     Ok(fk_by_table)
 }
 
+async fn fetch_source_indexes(
+    conn: &mut mysql_async::Conn,
+    db: &str,
+) -> Result<SourceIndexesByTable> {
+    let sql = r#"
+        SELECT
+            table_schema,
+            table_name,
+            index_name,
+            non_unique,
+            seq_in_index,
+            column_name
+        FROM information_schema.statistics
+        WHERE table_schema = ?
+          AND column_name IS NOT NULL
+        ORDER BY table_name, index_name, seq_in_index
+    "#;
+    let rows: Vec<Row> = conn.exec(sql, (db,)).await?;
+
+    type RawIndexRow = (String, String, String, u64, u64, String);
+    let mut grouped: HashMap<(String, String), BTreeMap<String, Vec<RawIndexRow>>> = HashMap::new();
+    for row in rows {
+        let record: RawIndexRow = mysql_async::from_row_opt(row)
+            .map_err(|e| anyhow!("Failed parsing source index row: {}", e))?;
+        grouped
+            .entry((record.0.clone(), record.1.clone()))
+            .or_default()
+            .entry(record.2.clone())
+            .or_default()
+            .push(record);
+    }
+
+    let mut out = HashMap::new();
+    for (table_key, by_name) in grouped {
+        let mut indexes = Vec::new();
+        for (name, mut rows) in by_name {
+            rows.sort_by_key(|r| r.4);
+            let unique = rows.first().map(|r| r.3 == 0).unwrap_or(false);
+            let columns = rows.iter().map(|r| r.5.clone()).collect::<Vec<_>>();
+            indexes.push(SourceIndexMetadata {
+                name: name.clone(),
+                columns,
+                unique,
+                primary: name.eq_ignore_ascii_case("PRIMARY"),
+            });
+        }
+        indexes.sort_by(|a, b| a.name.cmp(&b.name));
+        out.insert(table_key, indexes);
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -920,6 +1055,7 @@ mod tests {
                     referenced_columns: rcols.iter().map(|v| (*v).to_string()).collect(),
                 })
                 .collect(),
+            source_indexes: vec![],
         }
     }
 

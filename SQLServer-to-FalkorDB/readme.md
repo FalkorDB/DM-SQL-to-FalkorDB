@@ -46,6 +46,11 @@ falkordb:
   endpoint: "falkor://127.0.0.1:6379"
   graph: "sqlserver_graph"
   max_unwind_batch_size: 1000
+  indexes:                      # optional explicit FalkorDB indexes
+    - labels: ["Customer"]
+      property: "customer_id"
+      source_table: "dbo.customers"         # optional provenance metadata
+      source_columns: ["customer_id"]       # optional provenance metadata
 
 state:
   backend: "file"
@@ -90,6 +95,12 @@ In config, values beginning with `$` are resolved from environment variables for
 - `sqlserver.user`
 - `sqlserver.password`
 - `sqlserver.database`
+### FalkorDB index behavior
+- The loader always attempts required implicit indexes before writes:
+  - node key properties
+  - edge endpoint `match_on` properties
+- You can also provide explicit indexes in `falkordb.indexes`.
+- Explicit and implicit indexes are deduplicated and applied in both initial and incremental runs.
 
 ## End-to-end sample dataset migration
 Included files:

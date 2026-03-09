@@ -15,6 +15,67 @@ pub struct IntrospectionResult {
     pub schema: SchemaMetadata,
 }
 
+#[derive(Debug, Serialize)]
+struct TemplateFalkorIndex {
+    labels: Vec<String>,
+    property: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_table: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_columns: Vec<String>,
+}
+
+fn infer_falkordb_indexes(schema: &SchemaMetadata, draft: &GraphDraft) -> Vec<TemplateFalkorIndex> {
+    let indexed_columns_by_table: HashMap<String, HashSet<String>> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let table_key = qualified_table_key(&table.schema, &table.name);
+            let cols = table
+                .source_indexes
+                .iter()
+                .flat_map(|idx| idx.columns.iter().cloned())
+                .map(|c| c.to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            (table_key, cols)
+        })
+        .collect();
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for node in &draft.nodes {
+        let Some(indexed_columns) = indexed_columns_by_table.get(&node.table_key) else {
+            continue;
+        };
+        let labels = vec![node.label.clone()];
+        let mut candidates = vec![(node.key_property.clone(), node.key_column.clone())];
+        candidates.extend(node.properties.iter().cloned().map(|p| (p.clone(), p)));
+        for (property, source_column) in candidates {
+            if !indexed_columns.contains(&source_column.to_ascii_lowercase()) {
+                continue;
+            }
+            let dedupe_key = (labels.join(":"), property.clone());
+            if !seen.insert(dedupe_key) {
+                continue;
+            }
+            out.push(TemplateFalkorIndex {
+                labels: labels.clone(),
+                property,
+                source_table: Some(node.table_key.clone()),
+                source_columns: vec![source_column],
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.labels
+            .join(":")
+            .cmp(&b.labels.join(":"))
+            .then(a.property.cmp(&b.property))
+    });
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaMetadata {
     pub database: String,
@@ -29,6 +90,8 @@ pub struct TableMetadata {
     pub primary_key: Vec<String>,
     pub unique_constraints: Vec<UniqueConstraint>,
     pub foreign_keys: Vec<ForeignKeyMetadata>,
+    #[serde(default)]
+    pub source_indexes: Vec<SourceIndexMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +118,14 @@ pub struct ForeignKeyMetadata {
     pub referenced_columns: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceIndexMetadata {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub primary: bool,
+}
+
 type SqlServerClient = Client<Compat<TcpStream>>;
 
 #[derive(Debug, Serialize)]
@@ -77,6 +148,8 @@ struct TemplateFalkor {
     endpoint: String,
     graph: String,
     max_unwind_batch_size: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    indexes: Vec<TemplateFalkorIndex>,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +289,29 @@ pub async fn introspect_sqlserver_schema(cfg: &Config) -> Result<IntrospectionRe
         "#,
     )
     .await?;
+    let index_rows = query_json_rows(
+        &mut client,
+        r#"
+            SELECT
+              s.name AS schema_name,
+              t.name AS table_name,
+              i.name AS index_name,
+              i.is_unique AS is_unique,
+              i.is_primary_key AS is_primary,
+              ic.key_ordinal AS ordinal_position,
+              c.name AS column_name
+            FROM sys.indexes i
+            JOIN sys.tables t ON t.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+            JOIN sys.columns c ON c.object_id = i.object_id AND c.column_id = ic.column_id
+            WHERE i.index_id > 0
+              AND i.is_hypothetical = 0
+              AND ic.key_ordinal > 0
+            ORDER BY s.name, t.name, i.name, ic.key_ordinal
+        "#,
+    )
+    .await?;
     let column_rows = query_json_rows(
         &mut client,
         r#"
@@ -293,6 +389,7 @@ pub async fn introspect_sqlserver_schema(cfg: &Config) -> Result<IntrospectionRe
                 primary_key: Vec::new(),
                 unique_constraints: Vec::new(),
                 foreign_keys: Vec::new(),
+                source_indexes: Vec::new(),
             },
         );
     }
@@ -391,6 +488,43 @@ pub async fn introspect_sqlserver_schema(cfg: &Config) -> Result<IntrospectionRe
             }
             fks.sort_by(|a, b| a.name.cmp(&b.name));
             t.foreign_keys = fks;
+        }
+    }
+
+    let mut index_group: HashMap<TableKey, BTreeMap<String, Vec<(String, bool, bool, u64)>>> =
+        HashMap::new();
+    for row in index_rows {
+        let schema = as_string(&row, "schema_name")?;
+        let table = as_string(&row, "table_name")?;
+        let index_name = as_string(&row, "index_name")?;
+        let column_name = as_string(&row, "column_name")?;
+        let is_unique = as_bool(&row, "is_unique");
+        let is_primary = as_bool(&row, "is_primary");
+        let ordinal_position = as_u64(&row, "ordinal_position")?;
+        index_group
+            .entry((schema, table))
+            .or_default()
+            .entry(index_name)
+            .or_default()
+            .push((column_name, is_unique, is_primary, ordinal_position));
+    }
+    for ((schema, table), by_name) in index_group {
+        if let Some(t) = table_map.get_mut(&(schema, table)) {
+            let mut source_indexes = Vec::new();
+            for (index_name, mut rows) in by_name {
+                rows.sort_by_key(|v| v.3);
+                let unique = rows.first().map(|v| v.1).unwrap_or(false);
+                let primary = rows.first().map(|v| v.2).unwrap_or(false);
+                let columns = rows.into_iter().map(|v| v.0).collect::<Vec<_>>();
+                source_indexes.push(SourceIndexMetadata {
+                    name: index_name,
+                    columns,
+                    unique,
+                    primary,
+                });
+            }
+            source_indexes.sort_by(|a, b| a.name.cmp(&b.name));
+            t.source_indexes = source_indexes;
         }
     }
 
@@ -619,6 +753,7 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 cfg.falkordb.graph.clone()
             },
             max_unwind_batch_size: cfg.falkordb.max_unwind_batch_size.unwrap_or(1000),
+            indexes: infer_falkordb_indexes(schema, draft),
         },
         state: TemplateState {
             backend: "file".to_string(),

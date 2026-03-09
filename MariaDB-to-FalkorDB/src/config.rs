@@ -13,6 +13,20 @@ pub struct Config {
     pub mappings: Vec<EntityMapping>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct FalkorIndexSpec {
+    /// Node labels to index (combined as :LabelA:LabelB in FalkorDB index syntax).
+    pub labels: Vec<String>,
+    /// Graph property to index.
+    pub property: String,
+    /// Optional source table provenance for scaffold-generated templates.
+    #[serde(default)]
+    pub source_table: Option<String>,
+    /// Optional source columns provenance for scaffold-generated templates.
+    #[serde(default)]
+    pub source_columns: Vec<String>,
+}
+
 /// MariaDB connection configuration.
 #[derive(Debug, Deserialize)]
 pub struct MariaDbConfig {
@@ -59,6 +73,9 @@ pub struct FalkorConfig {
     /// Optional batch size override; default is 1000.
     #[serde(default)]
     pub max_unwind_batch_size: Option<usize>,
+    /// Optional explicit FalkorDB index definitions to apply before processing mappings.
+    #[serde(default)]
+    pub indexes: Vec<FalkorIndexSpec>,
 }
 
 /// Where to persist per-mapping watermarks for incremental loads.

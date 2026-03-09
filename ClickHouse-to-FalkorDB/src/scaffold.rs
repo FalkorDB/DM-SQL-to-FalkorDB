@@ -13,6 +13,67 @@ pub struct IntrospectionResult {
     pub schema: SchemaMetadata,
 }
 
+#[derive(Debug, Serialize)]
+struct TemplateFalkorIndex {
+    labels: Vec<String>,
+    property: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_table: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_columns: Vec<String>,
+}
+
+fn infer_falkordb_indexes(schema: &SchemaMetadata, draft: &GraphDraft) -> Vec<TemplateFalkorIndex> {
+    let indexed_columns_by_table: HashMap<String, HashSet<String>> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let table_key = format!("{}.{}", table.schema, table.name);
+            let cols = table
+                .source_indexes
+                .iter()
+                .flat_map(|idx| idx.columns.iter().cloned())
+                .map(|c| c.to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            (table_key, cols)
+        })
+        .collect();
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for node in &draft.nodes {
+        let Some(indexed_columns) = indexed_columns_by_table.get(&node.table_key) else {
+            continue;
+        };
+        let labels = vec![node.label.clone()];
+        let mut candidates = vec![(node.key_property.clone(), node.key_column.clone())];
+        candidates.extend(node.properties.iter().cloned().map(|p| (p.clone(), p)));
+        for (property, source_column) in candidates {
+            if !indexed_columns.contains(&source_column.to_ascii_lowercase()) {
+                continue;
+            }
+            let dedupe_key = (labels.join(":"), property.clone());
+            if !seen.insert(dedupe_key) {
+                continue;
+            }
+            out.push(TemplateFalkorIndex {
+                labels: labels.clone(),
+                property,
+                source_table: Some(node.table_key.clone()),
+                source_columns: vec![source_column],
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.labels
+            .join(":")
+            .cmp(&b.labels.join(":"))
+            .then(a.property.cmp(&b.property))
+    });
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaMetadata {
     pub database: String,
@@ -25,6 +86,8 @@ pub struct TableMetadata {
     pub name: String,
     pub columns: Vec<ColumnMetadata>,
     pub primary_key: Vec<String>,
+    #[serde(default)]
+    pub source_indexes: Vec<SourceIndexMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +98,14 @@ pub struct ColumnMetadata {
     pub nullable: bool,
     pub column_default: Option<String>,
     pub is_primary_key: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceIndexMetadata {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub primary: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,6 +131,8 @@ struct TemplateFalkor {
     endpoint: String,
     graph: String,
     max_unwind_batch_size: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    indexes: Vec<TemplateFalkorIndex>,
 }
 
 #[derive(Debug, Serialize)]
@@ -177,6 +250,9 @@ pub async fn introspect_clickhouse_schema(cfg: &Config) -> Result<IntrospectionR
 
     let tables = fetch_tables(ch_cfg, &database).await?;
     let columns = fetch_columns(ch_cfg, &database).await?;
+    let extra_source_indexes = fetch_source_indexes(ch_cfg, &database)
+        .await
+        .unwrap_or_default();
 
     let mut table_map: HashMap<(String, String), TableMetadata> = HashMap::new();
     for (schema, name) in tables {
@@ -187,6 +263,7 @@ pub async fn introspect_clickhouse_schema(cfg: &Config) -> Result<IntrospectionR
                 name,
                 columns: Vec::new(),
                 primary_key: Vec::new(),
+                source_indexes: Vec::new(),
             },
         );
     }
@@ -201,6 +278,19 @@ pub async fn introspect_clickhouse_schema(cfg: &Config) -> Result<IntrospectionR
     for t in table_map.values_mut() {
         t.columns
             .sort_by_key(|c| (c.ordinal_position, c.name.clone()));
+        let mut source_indexes = Vec::new();
+        if !t.primary_key.is_empty() {
+            source_indexes.push(SourceIndexMetadata {
+                name: "PRIMARY_KEY".to_string(),
+                columns: t.primary_key.clone(),
+                unique: true,
+                primary: true,
+            });
+        }
+        if let Some(extra) = extra_source_indexes.get(&(t.schema.clone(), t.name.clone())) {
+            source_indexes.extend(extra.clone());
+        }
+        t.source_indexes = source_indexes;
     }
     let mut normalized_tables: Vec<TableMetadata> = table_map.into_values().collect();
     normalized_tables.sort_by(|a, b| a.name.cmp(&b.name));
@@ -223,6 +313,8 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
         "# ClickHouse usually does not expose FK relationships; inferred edges are heuristic."
             .to_string(),
         "# Review labels, relationships, and key/delta selections.".to_string(),
+        "# ClickHouse index metadata is best-effort (primary key + data skipping indexes)."
+            .to_string(),
     ];
     if !draft.notes.is_empty() {
         notes.push("# Notes requiring manual review:".to_string());
@@ -403,6 +495,7 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 cfg.falkordb.graph.clone()
             },
             max_unwind_batch_size: cfg.falkordb.max_unwind_batch_size.unwrap_or(1000),
+            indexes: infer_falkordb_indexes(schema, draft),
         },
         state: TemplateState {
             backend: "file".to_string(),
@@ -596,6 +689,56 @@ async fn fetch_columns(
                 is_primary_key,
             },
         ));
+    }
+    Ok(out)
+}
+
+async fn fetch_source_indexes(
+    ch_cfg: &ClickHouseConfig,
+    database: &str,
+) -> Result<HashMap<(String, String), Vec<SourceIndexMetadata>>> {
+    let sql = format!(
+        "SELECT database, table, name, expr FROM system.data_skipping_indices WHERE database = '{}' ORDER BY table, name",
+        escape_sql_literal(database)
+    );
+    let rows = run_json_each_row_query(ch_cfg, &sql).await?;
+    let mut out: HashMap<(String, String), Vec<SourceIndexMetadata>> = HashMap::new();
+    for row in rows {
+        let db = row
+            .get("database")
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| anyhow!("invalid system.data_skipping_indices row: missing database"))?
+            .to_string();
+        let table = row
+            .get("table")
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| anyhow!("invalid system.data_skipping_indices row: missing table"))?
+            .to_string();
+        let name = row
+            .get("name")
+            .and_then(JsonValue::as_str)
+            .unwrap_or("skip_index")
+            .to_string();
+        let expr = row
+            .get("expr")
+            .and_then(JsonValue::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if expr.is_empty() {
+            continue;
+        }
+        out.entry((db, table))
+            .or_default()
+            .push(SourceIndexMetadata {
+                name,
+                columns: vec![expr],
+                unique: false,
+                primary: false,
+            });
+    }
+    for indexes in out.values_mut() {
+        indexes.sort_by(|a, b| a.name.cmp(&b.name));
     }
     Ok(out)
 }

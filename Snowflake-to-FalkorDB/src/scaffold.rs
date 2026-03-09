@@ -14,6 +14,67 @@ pub struct IntrospectionResult {
     pub schema: SchemaMetadata,
 }
 
+#[derive(Debug, Serialize)]
+struct TemplateFalkorIndex {
+    labels: Vec<String>,
+    property: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_table: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_columns: Vec<String>,
+}
+
+fn infer_falkordb_indexes(schema: &SchemaMetadata, draft: &GraphDraft) -> Vec<TemplateFalkorIndex> {
+    let indexed_columns_by_table: HashMap<String, HashSet<String>> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let table_key = qualified_table_key(&table.schema, &table.name);
+            let cols = table
+                .source_indexes
+                .iter()
+                .flat_map(|idx| idx.columns.iter().cloned())
+                .map(|c| c.to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            (table_key, cols)
+        })
+        .collect();
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for node in &draft.nodes {
+        let Some(indexed_columns) = indexed_columns_by_table.get(&node.table_key) else {
+            continue;
+        };
+        let labels = vec![node.label.clone()];
+        let mut candidates = vec![(node.key_property.clone(), node.key_column.clone())];
+        candidates.extend(node.properties.iter().cloned().map(|p| (p.clone(), p)));
+        for (property, source_column) in candidates {
+            if !indexed_columns.contains(&source_column.to_ascii_lowercase()) {
+                continue;
+            }
+            let dedupe_key = (labels.join(":"), property.clone());
+            if !seen.insert(dedupe_key) {
+                continue;
+            }
+            out.push(TemplateFalkorIndex {
+                labels: labels.clone(),
+                property,
+                source_table: Some(node.table_key.clone()),
+                source_columns: vec![source_column],
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.labels
+            .join(":")
+            .cmp(&b.labels.join(":"))
+            .then(a.property.cmp(&b.property))
+    });
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaMetadata {
     pub database: String,
@@ -29,6 +90,8 @@ pub struct TableMetadata {
     pub primary_key: Vec<String>,
     pub unique_constraints: Vec<UniqueConstraint>,
     pub foreign_keys: Vec<ForeignKeyMetadata>,
+    #[serde(default)]
+    pub source_indexes: Vec<SourceIndexMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +116,14 @@ pub struct ForeignKeyMetadata {
     pub referenced_schema: String,
     pub referenced_table: String,
     pub referenced_columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceIndexMetadata {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    pub primary: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,6 +153,8 @@ struct TemplateFalkor {
     endpoint: String,
     graph: String,
     max_unwind_batch_size: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    indexes: Vec<TemplateFalkorIndex>,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +289,7 @@ pub async fn introspect_snowflake_schema(cfg: &Config) -> Result<IntrospectionRe
                 primary_key: Vec::new(),
                 unique_constraints: Vec::new(),
                 foreign_keys: Vec::new(),
+                source_indexes: Vec::new(),
             },
         );
     }
@@ -245,6 +319,9 @@ pub async fn introspect_snowflake_schema(cfg: &Config) -> Result<IntrospectionRe
             t.foreign_keys = fks;
         }
     }
+    for t in table_map.values_mut() {
+        t.source_indexes = build_best_effort_source_indexes(t);
+    }
 
     let mut normalized_tables: Vec<TableMetadata> = table_map.into_values().collect();
     normalized_tables.sort_by(|a, b| a.name.cmp(&b.name));
@@ -270,6 +347,8 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
     ];
     notes.push("# Snowflake FK metadata may be partial depending on source constraints/privileges."
         .to_string());
+    notes.push("# Snowflake index metadata is best-effort and currently inferred from PK/UNIQUE constraints."
+        .to_string());
     if !draft.notes.is_empty() {
         notes.push("# Notes requiring manual review:".to_string());
         for note in &draft.notes {
@@ -278,6 +357,30 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
     }
 
     Ok(format!("{}\n\n{}", notes.join("\n"), yaml))
+}
+
+fn build_best_effort_source_indexes(table: &TableMetadata) -> Vec<SourceIndexMetadata> {
+    let mut out = Vec::new();
+    if !table.primary_key.is_empty() {
+        out.push(SourceIndexMetadata {
+            name: "PRIMARY_KEY".to_string(),
+            columns: table.primary_key.clone(),
+            unique: true,
+            primary: true,
+        });
+    }
+    for uc in &table.unique_constraints {
+        if uc.columns.is_empty() {
+            continue;
+        }
+        out.push(SourceIndexMetadata {
+            name: uc.name.clone(),
+            columns: uc.columns.clone(),
+            unique: true,
+            primary: false,
+        });
+    }
+    out
 }
 
 #[derive(Debug)]
@@ -530,6 +633,7 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 cfg.falkordb.graph.clone()
             },
             max_unwind_batch_size: cfg.falkordb.max_unwind_batch_size.unwrap_or(1000),
+            indexes: infer_falkordb_indexes(schema, draft),
         },
         state: TemplateState {
             backend: "file".to_string(),
