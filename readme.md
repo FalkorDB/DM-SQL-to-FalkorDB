@@ -396,6 +396,11 @@ Minimal example:
 
 - **Declarative mapping**: You define how source rows map to graph nodes and edges.
 - **Idempotent upserts**: Writes use Cypher `UNWIND` + `MERGE` based on configured keys.
+- **FalkorDB index creation (performance)**:
+  - Loaders create required indexes before writes for node key properties and edge endpoint `match_on` properties.
+  - You can also define explicit indexes via `falkordb.indexes` in connector configs.
+  - Explicit and implicit indexes are deduplicated and applied for both initial and incremental runs.
+  - Scaffold-generated templates may include suggested `falkordb.indexes` entries when source index metadata is available (best effort by source engine).
 - **Incremental sync**: When configured with a watermark column (e.g. `updated_at`), the loader fetches only rows newer than the last successful run.
 - **Soft deletes (optional)**: A configured deleted-flag column/value can be interpreted as deletes in FalkorDB.
 - **State**: Watermarks are typically stored in a file-backed state JSON so runs can resume safely.
