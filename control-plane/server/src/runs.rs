@@ -274,7 +274,13 @@ pub async fn start_run(
     }
 
     if tool.manifest.capabilities.supports_metrics {
-        spawn_metrics_poller(run_id, tool.clone(), state.runs.clone(), state.store.clone());
+        spawn_metrics_poller(
+            run_id,
+            req.config_id,
+            tool.clone(),
+            state.runs.clone(),
+            state.store.clone(),
+        );
     }
 
     // Completion task: monitor the process with try_wait so we don't hold mutex guards across .await.
@@ -475,7 +481,7 @@ fn parse_persisted_log_line(line: &str) -> (&str, &str) {
     ("unknown", line)
 }
 
-fn spawn_metrics_poller(run_id: Uuid, tool: Tool, runs: RunManager, store: Store) {
+fn spawn_metrics_poller(run_id: Uuid, config_id: Uuid, tool: Tool, runs: RunManager, store: Store) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
 
@@ -512,6 +518,7 @@ fn spawn_metrics_poller(run_id: Uuid, tool: Tool, runs: RunManager, store: Store
             if let Err(e) = store
                 .insert_tool_metrics_snapshot(
                     &tool.manifest.id,
+                    Some(config_id),
                     Some(run_id),
                     &view.fetched_at,
                     &view_json,

@@ -237,8 +237,8 @@ Selected API endpoints:
 - `GET /api/runs/:run_id`, `POST /api/runs/:run_id/stop`
 - `GET /api/runs/:run_id/events` (SSE)
 - `GET /api/runs/:run_id/logs` (persisted log lines for viewing past runs)
-- `GET /api/metrics` (all tools metrics snapshot)
-- `GET /api/metrics/:tool_id` (single tool metrics snapshot)
+- `GET /api/metrics` (all tools metrics snapshot; optional `?config_id=<uuid>` to scope to one ETL config)
+- `GET /api/metrics/:tool_id` (single tool metrics snapshot; optional `?config_id=<uuid>`)
 
 ### Control plane metrics option (`tool.manifest.json`)
 
@@ -253,6 +253,8 @@ The control plane uses this in two places:
 2. **Metrics collection + persistence**: while a run is active, the server polls the raw endpoint, filters samples by `metricPrefix`, groups per-mapping samples by `mappingLabel` (default `mapping`), and stores snapshots in SQLite.
 
 `/api/metrics` and `/api/metrics/:tool_id` now serve the latest persisted snapshot, so metrics remain available even after tool processes stop.
+Both endpoints support optional `config_id` filtering, which is useful when multiple ETL configurations use the same tool (for example, different source tables mapped to different destination graphs).
+When `config_id` is provided, the control plane returns the latest persisted snapshot for that specific config context instead of the latest snapshot across all configs of the tool.
 The Metrics UI reads these persisted snapshots and does not display raw scrape endpoint/port details.
 
 `metrics` fields:

@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::Json;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::models::{not_found, ApiResult};
+use crate::models::{bad_request, not_found, ApiResult};
 use crate::models::AppState;
 use crate::tools::Tool;
 
@@ -22,6 +23,7 @@ pub struct ToolMetricsView {
     pub fetched_at: String,
     pub snapshot_timestamp: Option<String>,
     pub snapshot_run_id: Option<String>,
+    pub snapshot_config_id: Option<String>,
     pub snapshot_source: Option<String>,
     pub overall: BTreeMap<String, f64>,
     pub per_mapping: BTreeMap<String, BTreeMap<String, f64>>,
@@ -44,30 +46,76 @@ struct ResolvedMetricsSpec {
     mapping_label: String,
 }
 
-pub async fn list_tool_metrics(State(state): State<AppState>) -> Json<Vec<ToolMetricsView>> {
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MetricsQuery {
+    pub config_id: Option<Uuid>,
+}
+
+pub async fn list_tool_metrics(
+    State(state): State<AppState>,
+    Query(query): Query<MetricsQuery>,
+) -> ApiResult<Json<Vec<ToolMetricsView>>> {
     let mut out = Vec::new();
 
-    for summary in state.tools.list() {
-        if let Some(tool) = state.tools.get(&summary.id) {
-            out.push(load_persisted_tool_metrics_or_default(&state, tool).await);
+    if let Some(config_id) = query.config_id {
+        let Some(config) = state
+            .store
+            .get_config(config_id)
+            .await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        else {
+            return bad_request("unknown config_id".to_string());
+        };
+
+        let Some(tool) = state.tools.get(&config.tool_id) else {
+            return bad_request("config references unknown tool_id".to_string());
+        };
+
+        out.push(load_persisted_tool_metrics_or_default(&state, tool, Some(config_id)).await);
+    } else {
+        for summary in state.tools.list() {
+            if let Some(tool) = state.tools.get(&summary.id) {
+                out.push(load_persisted_tool_metrics_or_default(&state, tool, None).await);
+            }
         }
     }
 
-    Json(out)
+    Ok(Json(out))
 }
 
 pub async fn get_tool_metrics(
     State(state): State<AppState>,
     AxumPath(tool_id): AxumPath<String>,
+    Query(query): Query<MetricsQuery>,
 ) -> ApiResult<Json<ToolMetricsView>> {
     let Some(tool) = state.tools.get(&tool_id) else {
         return not_found();
     };
+    if let Some(config_id) = query.config_id {
+        let Some(config) = state
+            .store
+            .get_config(config_id)
+            .await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        else {
+            return bad_request("unknown config_id".to_string());
+        };
 
-    Ok(Json(load_persisted_tool_metrics_or_default(&state, tool).await))
+        if config.tool_id != tool_id {
+            return bad_request("config_id does not belong to requested tool_id".to_string());
+        }
+    }
+
+    Ok(Json(
+        load_persisted_tool_metrics_or_default(&state, tool, query.config_id).await,
+    ))
 }
 
-async fn load_persisted_tool_metrics_or_default(state: &AppState, tool: &Tool) -> ToolMetricsView {
+async fn load_persisted_tool_metrics_or_default(
+    state: &AppState,
+    tool: &Tool,
+    config_id: Option<Uuid>,
+) -> ToolMetricsView {
     let mut fallback = empty_tool_metrics_view(tool);
 
     if !fallback.supports_metrics {
@@ -79,7 +127,7 @@ async fn load_persisted_tool_metrics_or_default(state: &AppState, tool: &Tool) -
 
     let stored = match state
         .store
-        .get_latest_tool_metrics_snapshot(&tool.manifest.id)
+        .get_latest_tool_metrics_snapshot(&tool.manifest.id, config_id)
         .await
     {
         Ok(v) => v,
@@ -90,9 +138,15 @@ async fn load_persisted_tool_metrics_or_default(state: &AppState, tool: &Tool) -
     };
 
     let Some(snapshot_row) = stored else {
-        fallback
-            .warnings
-            .push("No persisted metrics snapshot yet. Start a run to collect metrics.".to_string());
+        if let Some(config_id) = config_id {
+            fallback.warnings.push(format!(
+                "No persisted metrics snapshot yet for config_id '{config_id}'. Start a run with this config to collect metrics."
+            ));
+        } else {
+            fallback
+                .warnings
+                .push("No persisted metrics snapshot yet. Start a run to collect metrics.".to_string());
+        }
         return fallback;
     };
 
@@ -118,6 +172,7 @@ async fn load_persisted_tool_metrics_or_default(state: &AppState, tool: &Tool) -
             }
             view.snapshot_timestamp = Some(snapshot_row.fetched_at.clone());
             view.snapshot_run_id = snapshot_row.run_id;
+            view.snapshot_config_id = snapshot_row.config_id;
             view.snapshot_source = Some("persisted".to_string());
             view.fetched_at = snapshot_row.fetched_at;
             view.warnings
@@ -144,6 +199,7 @@ fn empty_tool_metrics_view(tool: &Tool) -> ToolMetricsView {
         fetched_at: Utc::now().to_rfc3339(),
         snapshot_timestamp: None,
         snapshot_run_id: None,
+        snapshot_config_id: None,
         snapshot_source: None,
         overall: BTreeMap::new(),
         per_mapping: BTreeMap::new(),

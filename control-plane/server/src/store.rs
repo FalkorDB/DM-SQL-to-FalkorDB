@@ -24,6 +24,7 @@ pub struct Store {
 
 #[derive(sqlx::FromRow)]
 pub struct ToolMetricsSnapshotRow {
+    pub config_id: Option<String>,
     pub run_id: Option<String>,
     pub fetched_at: String,
     pub view_json: String,
@@ -221,14 +222,16 @@ impl Store {
     pub async fn insert_tool_metrics_snapshot(
         &self,
         tool_id: &str,
+        config_id: Option<Uuid>,
         run_id: Option<Uuid>,
         fetched_at: &str,
         view_json: &str,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO tool_metrics_snapshots (tool_id, run_id, fetched_at, view_json) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO tool_metrics_snapshots (tool_id, config_id, run_id, fetched_at, view_json) VALUES (?1, ?2, ?3, ?4, ?5)",
         )
         .bind(tool_id)
+        .bind(config_id.map(|id| id.to_string()))
         .bind(run_id.map(|id| id.to_string()))
         .bind(fetched_at)
         .bind(view_json)
@@ -242,13 +245,24 @@ impl Store {
     pub async fn get_latest_tool_metrics_snapshot(
         &self,
         tool_id: &str,
+        config_id: Option<Uuid>,
     ) -> anyhow::Result<Option<ToolMetricsSnapshotRow>> {
-        let row = sqlx::query_as::<_, ToolMetricsSnapshotRow>(
-            "SELECT run_id, fetched_at, view_json FROM tool_metrics_snapshots WHERE tool_id = ?1 ORDER BY id DESC LIMIT 1",
-        )
-        .bind(tool_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = if let Some(config_id) = config_id {
+            sqlx::query_as::<_, ToolMetricsSnapshotRow>(
+                "SELECT config_id, run_id, fetched_at, view_json FROM tool_metrics_snapshots WHERE tool_id = ?1 AND config_id = ?2 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(tool_id)
+            .bind(config_id.to_string())
+            .fetch_optional(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, ToolMetricsSnapshotRow>(
+                "SELECT config_id, run_id, fetched_at, view_json FROM tool_metrics_snapshots WHERE tool_id = ?1 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(tool_id)
+            .fetch_optional(&self.pool)
+            .await?
+        };
 
         Ok(row)
     }

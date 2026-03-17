@@ -137,6 +137,7 @@ export type ToolMetricsView = {
   fetched_at: string
   snapshot_timestamp?: string | null
   snapshot_run_id?: string | null
+  snapshot_config_id?: string | null
   snapshot_source?: string | null
   overall: Record<string, number>
   per_mapping: Record<string, Record<string, number>>

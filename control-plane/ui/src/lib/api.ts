@@ -116,7 +116,13 @@ export const api = {
       }),
   },
   metrics: {
-    list: () => apiFetch<ToolMetricsView[]>('/api/metrics'),
-    get: (toolId: string) => apiFetch<ToolMetricsView>(`/api/metrics/${toolId}`),
+    list: (configId?: string) => {
+      const qs = configId ? `?config_id=${encodeURIComponent(configId)}` : ''
+      return apiFetch<ToolMetricsView[]>(`/api/metrics${qs}`)
+    },
+    get: (toolId: string, configId?: string) => {
+      const qs = configId ? `?config_id=${encodeURIComponent(configId)}` : ''
+      return apiFetch<ToolMetricsView>(`/api/metrics/${toolId}${qs}`)
+    },
   },
 }

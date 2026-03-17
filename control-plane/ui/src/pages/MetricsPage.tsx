@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { api } from '../lib/api'
-import type { ToolMetricsView, ToolSummary } from '../lib/types'
+import type { ConfigRecord, ToolMetricsView, ToolSummary } from '../lib/types'
 
 const PRIMARY_METRICS = [
   'runs',
@@ -23,8 +23,10 @@ function formatMetricValue(v: number): string {
 export default function MetricsPage() {
   const [params, setParams] = useSearchParams()
   const selectedToolId = params.get('tool_id') ?? ''
+  const selectedConfigId = params.get('config_id') ?? ''
 
   const [tools, setTools] = useState<ToolSummary[] | null>(null)
+  const [configs, setConfigs] = useState<ConfigRecord[] | null>(null)
   const [metrics, setMetrics] = useState<ToolMetricsView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -45,20 +47,39 @@ export default function MetricsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!selectedToolId) {
+      setConfigs(null)
+      return
+    }
+
+    api.configs
+      .list(selectedToolId)
+      .then((cs) => {
+        setConfigs(cs)
+
+        const hasCurrentConfig = selectedConfigId && cs.some((c) => c.id === selectedConfigId)
+        if (selectedConfigId && !hasCurrentConfig) {
+          setParams({ tool_id: selectedToolId }, { replace: true })
+        }
+      })
+      .catch((e) => setError(String(e)))
+  }, [selectedConfigId, selectedToolId, setParams])
+
   const fetchMetrics = useCallback(async () => {
     if (!selectedToolId) return
     setRefreshing(true)
     setError(null)
 
     try {
-      const data = await api.metrics.get(selectedToolId)
+      const data = await api.metrics.get(selectedToolId, selectedConfigId || undefined)
       setMetrics(data)
     } catch (e) {
       setError(String(e))
     } finally {
       setRefreshing(false)
     }
-  }, [selectedToolId])
+  }, [selectedConfigId, selectedToolId])
 
   useEffect(() => {
     if (!selectedToolId) {
@@ -153,6 +174,29 @@ export default function MetricsPage() {
             </button>
           ))}
         </div>
+        <div className="mt-3">
+          <div className="text-sm text-foreground/70 mb-1">Filter by config (optional)</div>
+          <select
+            className="w-full md:max-w-xl bg-background border border-border rounded-md px-2 py-1.5 text-sm"
+            value={selectedConfigId}
+            onChange={(e) => {
+              const nextConfigId = e.target.value
+              if (nextConfigId) {
+                setParams({ tool_id: selectedToolId, config_id: nextConfigId })
+              } else {
+                setParams({ tool_id: selectedToolId })
+              }
+            }}
+            disabled={!selectedToolId}
+          >
+            <option value="">All configs (latest for tool)</option>
+            {(configs ?? []).map((cfg) => (
+              <option key={cfg.id} value={cfg.id}>
+                {cfg.name} ({cfg.id})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {!metrics ? (
@@ -174,6 +218,9 @@ export default function MetricsPage() {
                 </div>
                 <div>
                   run id: {metrics.snapshot_run_id || '—'}
+                </div>
+                <div>
+                  config id: {metrics.snapshot_config_id || '—'}
                 </div>
               </div>
             </div>
