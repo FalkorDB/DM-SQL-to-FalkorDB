@@ -1,0 +1,30 @@
+bigquery:
+  project_id: "your-gcp-project"
+  dataset: "your_dataset"
+  location: "US"
+  access_token: "$BIGQUERY_ACCESS_TOKEN"
+  # Alternative auth:
+  # service_account_key_path: "/absolute/path/to/service-account.json"
+  query_timeout_ms: 60000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "bigquery_check"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: file
+  file_path: "bigquery_check_state.json"
+
+mappings:
+  - type: node
+    name: connectivity_check
+    source:
+      # Executes a harmless query that returns zero rows but validates auth + SQL path.
+      select: "SELECT 1 AS id WHERE 1 = 0"
+    mode: full
+    labels: ["ConnectivityCheck"]
+    key:
+      column: "id"
+      property: "id"
+    properties: {}

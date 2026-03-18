@@ -7,7 +7,7 @@ It includes a control plane web tool to initiate and track data migration (ETL/C
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (MySQL / MariaDB / SQL Server / Databricks / PostgreSQL / Snowflake / ClickHouse)
+- Network access to your source system (BigQuery / ClickHouse / Databricks / MariaDB / MySQL / PostgreSQL / Snowflake / SQL Server)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -21,6 +21,27 @@ Configuration File Editor with Graph Schema preview
 <img width="1146" height="765" alt="DM-UI-graph-schema-canvas" src="https://github.com/user-attachments/assets/f80d7e8b-5983-4f45-902e-82489f190a1f" />
 
 
+
+### BigQuery → FalkorDB
+
+- Location: `BigQuery-to-FalkorDB/`
+- What it does: Loads and incrementally syncs tabular data from BigQuery into FalkorDB using GoogleSQL (ANSI SQL mode) over BigQuery REST APIs, with optional purge modes and daemon mode.
+- Scaffolding: supports `--introspect-schema` and `--generate-template` using BigQuery `INFORMATION_SCHEMA` metadata; emits fully-qualified source tables and inferred node/edge mappings where metadata is available.
+- Documentation: [BigQuery-to-FalkorDB/README.md](BigQuery-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+
+Quick start (from the crate directory):
+
+```bash
+cd BigQuery-to-FalkorDB/bigquery-to-falkordb
+cargo build --release
+
+# Run once
+cargo run --release -- --config ../bigquery_sample.yaml
+
+# Continuous sync
+cargo run --release -- --config ../bigquery_sample.yaml --daemon --interval-secs 60
+```
 
 ### ClickHouse → FalkorDB
 
@@ -303,6 +324,19 @@ Minimal example:
 
 ## Metrics exposed by each tool
 
+### BigQuery → FalkorDB (`bigquery_to_falkordb_`)
+
+- `bigquery_to_falkordb_runs`
+- `bigquery_to_falkordb_failed_runs`
+- `bigquery_to_falkordb_rows_fetched`
+- `bigquery_to_falkordb_rows_written`
+- `bigquery_to_falkordb_rows_deleted`
+- `bigquery_to_falkordb_mapping_runs{mapping="<name>"}`
+- `bigquery_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `bigquery_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `bigquery_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `bigquery_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
 ### ClickHouse → FalkorDB (`clickhouse_to_falkordb_`)
 
 - `clickhouse_to_falkordb_runs`
@@ -411,13 +445,14 @@ Minimal example:
 
 Most SQL-style loaders in this repository support scaffold mode:
 
-- MySQL
-- MariaDB
-- SQL Server
-- PostgreSQL
-- Snowflake
+- BigQuery
 - ClickHouse
 - Databricks
+- MariaDB
+- MySQL
+- PostgreSQL
+- Snowflake
+- SQL Server
 
 Scaffold mode is exposed through CLI flags:
 

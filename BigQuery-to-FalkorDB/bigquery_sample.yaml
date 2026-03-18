@@ -1,0 +1,86 @@
+bigquery:
+  project_id: "your-gcp-project"
+  dataset: "analytics"
+  location: "US"
+  access_token: "$BIGQUERY_ACCESS_TOKEN"
+  # service_account_key_path: "/absolute/path/to/service-account.json"
+  query_timeout_ms: 60000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "bigquery_graph"
+  max_unwind_batch_size: 1000
+  indexes:
+    - labels: ["Customer"]
+      property: "customer_id"
+      source_table: "your-gcp-project.analytics.customers"
+      source_columns: ["customer_id"]
+
+state:
+  backend: file
+  file_path: "bigquery_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "analytics.customers"
+      where: "is_active = true"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "customer_id"
+    properties:
+      email:
+        column: "email"
+      country:
+        column: "country"
+
+  - type: node
+    name: orders
+    source:
+      table: "analytics.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Order"]
+    key:
+      column: "order_id"
+      property: "order_id"
+    properties:
+      total_amount:
+        column: "total_amount"
+      status:
+        column: "status"
+
+  - type: edge
+    name: customer_orders
+    source:
+      table: "analytics.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "customer_id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "order_id"
+    properties:
+      ordered_at:
+        column: "ordered_at"

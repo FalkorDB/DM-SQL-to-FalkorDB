@@ -125,8 +125,9 @@ pub async fn generate_schema_graph_preview(
                             scaffold.schema_summary.as_deref(),
                             &mut warnings,
                         ),
-                        Err((_, err)) => warnings
-                            .push(format!("type enrichment skipped: failed schema introspection: {err}")),
+                        // Graph preview is still useful without SQL type enrichment.
+                        // Avoid exposing verbose scaffold/build stderr in this non-critical path.
+                        Err(_) => {}
                     }
                 }
                 return Ok(Json(GenerateSchemaGraphPreviewResponse {
@@ -237,12 +238,8 @@ async fn run_scaffold_generation(
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     if !out.status.success() {
-        let msg = if stderr.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            stderr.trim().to_string()
-        };
-        return bad_request(format!("scaffold generation failed: {}", msg));
+        let msg = summarize_scaffold_failure(&stderr, &stdout);
+        return bad_request(format!("scaffold generation failed: {msg}"));
     }
 
     let (schema_summary, template_yaml) = split_scaffold_output(&stdout, include_schema);
@@ -274,6 +271,65 @@ fn split_scaffold_output(stdout: &str, include_schema: bool) -> (Option<String>,
     (None, stdout.trim().to_string())
 }
 
+fn summarize_scaffold_failure(stderr: &str, stdout: &str) -> String {
+    if let Some(summary) = extract_error_summary(stderr) {
+        return summary;
+    }
+    if let Some(summary) = extract_error_summary(stdout) {
+        return summary;
+    }
+
+    for source in [stderr, stdout] {
+        if let Some(line) = source
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && !is_scaffold_noise_line(line))
+        {
+            return line.to_string();
+        }
+    }
+
+    "scaffold command failed".to_string()
+}
+
+fn extract_error_summary(raw: &str) -> Option<String> {
+    let lines: Vec<&str> = raw.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("Error:"))?;
+
+    let mut captured = Vec::new();
+    for line in lines.iter().skip(start) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if is_scaffold_noise_line(trimmed) {
+            continue;
+        }
+        captured.push(trimmed.to_string());
+    }
+
+    if captured.is_empty() {
+        None
+    } else {
+        Some(captured.join(" "))
+    }
+}
+
+fn is_scaffold_noise_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("warning:")
+        || trimmed.starts_with("-->")
+        || trimmed.starts_with('|')
+        || trimmed.starts_with("= note:")
+        || trimmed.starts_with("help:")
+        || trimmed.starts_with("Compiling ")
+        || trimmed.starts_with("Finished ")
+        || trimmed.starts_with("Running ")
+        || trimmed.starts_with('`')
+}
+
 fn maybe_enrich_canvas_data_from_schema_summary(
     canvas_data: &mut CanvasData,
     schema_summary: Option<&str>,
@@ -289,7 +345,9 @@ fn maybe_enrich_canvas_data_from_schema_summary(
     match build_table_column_type_index(schema_summary) {
         Ok(type_index) => enrich_canvas_data_with_graph_types(canvas_data, &type_index),
         Err(err) => {
-            warnings.push(format!("failed to parse schema summary for graph types: {err}"));
+            warnings.push(format!(
+                "failed to parse schema summary for graph types: {err}"
+            ));
         }
     }
 }
@@ -423,7 +481,9 @@ fn enrich_canvas_data_with_graph_types(
             if let Some(source_type) = lookup_column_type(column_types, &key_column) {
                 node_data.insert(
                     "key_type".to_string(),
-                    serde_json::Value::String(map_source_type_to_graph_type(source_type).to_string()),
+                    serde_json::Value::String(
+                        map_source_type_to_graph_type(source_type).to_string(),
+                    ),
                 );
             }
         }
@@ -576,9 +636,10 @@ fn map_source_type_to_graph_type(source_type: &str) -> &'static str {
         return "vector";
     }
 
-    if tokens.iter().any(|token| {
-        token == "bool" || token == "boolean" || token == "bit"
-    }) {
+    if tokens
+        .iter()
+        .any(|token| token == "bool" || token == "boolean" || token == "bit")
+    {
         return "boolean";
     }
 
@@ -843,7 +904,14 @@ fn infer_relationship_from_name(name: &str) -> String {
 fn supports_scaffold(tool_id: &str) -> bool {
     matches!(
         tool_id,
-        "mysql" | "mariadb" | "sqlserver" | "postgres" | "snowflake" | "clickhouse" | "databricks"
+        "mysql"
+            | "mariadb"
+            | "sqlserver"
+            | "postgres"
+            | "snowflake"
+            | "clickhouse"
+            | "databricks"
+            | "bigquery"
     )
 }
 
@@ -1022,10 +1090,18 @@ tables:
         let customers_node = canvas
             .nodes
             .iter()
-            .find(|n| n.data.get("mapping_name").and_then(serde_json::Value::as_str) == Some("customers"))
+            .find(|n| {
+                n.data
+                    .get("mapping_name")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("customers")
+            })
             .expect("customers node should exist");
         assert_eq!(
-            customers_node.data.get("key_type").and_then(serde_json::Value::as_str),
+            customers_node
+                .data
+                .get("key_type")
+                .and_then(serde_json::Value::as_str),
             Some("number")
         );
         assert_eq!(
@@ -1067,5 +1143,42 @@ tables:
                 .and_then(serde_json::Value::as_str),
             Some("number")
         );
+    }
+
+    #[test]
+    fn summarize_scaffold_failure_prefers_runtime_error_over_compiler_warnings() {
+        let stderr = r#"warning: unused variable: `cypher`
+ --> src/sink_async.rs:157:9
+  |
+157 |     let cypher = format!(
+  |         ^^^^^^
+Finished `release` profile [optimized] target(s) in 0.23s
+Running `target/release/bigquery-to-falkordb --config tmp.yaml --introspect-schema --generate-template`
+Error: Environment variable BIGQUERY_ACCESS_TOKEN referenced by bigquery.access_token is not set
+
+Caused by:
+    environment variable not found
+"#;
+
+        let summary = summarize_scaffold_failure(stderr, "");
+        assert_eq!(
+            summary,
+            "Error: Environment variable BIGQUERY_ACCESS_TOKEN referenced by bigquery.access_token is not set Caused by: environment variable not found"
+        );
+    }
+
+    #[test]
+    fn summarize_scaffold_failure_ignores_noise_lines() {
+        let stderr = r#"warning: something noisy
+ --> src/file.rs:1:1
+  |
+  | noop
+  = note: extra
+help: ignore me
+"#;
+        let stdout = "Error: schema query failed";
+
+        let summary = summarize_scaffold_failure(stderr, stdout);
+        assert_eq!(summary, "Error: schema query failed");
     }
 }

@@ -1,0 +1,40 @@
+bigquery:
+  # Billing/execution project where your account can run BigQuery jobs.
+  project_id: "REPLACE_WITH_YOUR_GCP_PROJECT_ID"
+  dataset: "samples"
+  location: "US"
+  access_token: "$BIGQUERY_ACCESS_TOKEN"
+  query_timeout_ms: 60000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "bigquery_public_data_graph"
+  max_unwind_batch_size: 1000
+  indexes:
+    - labels: ["ShakespeareWord"]
+      property: "word"
+      source_table: "bigquery-public-data.samples.shakespeare"
+      source_columns: ["word"]
+
+state:
+  backend: file
+  file_path: "bigquery_public_data_state.json"
+
+mappings:
+  - type: node
+    name: shakespeare_words
+    source:
+      table: "bigquery-public-data.samples.shakespeare"
+      where: "word_count >= 1000"
+    mode: full
+    labels: ["ShakespeareWord"]
+    key:
+      column: "word"
+      property: "word"
+    properties:
+      word_count:
+        column: "word_count"
+      corpus:
+        column: "corpus"
+      corpus_date:
+        column: "corpus_date"

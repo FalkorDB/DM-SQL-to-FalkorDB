@@ -230,7 +230,7 @@ function inferSyntax(text: string): Exclude<ConfigSyntax, 'auto'> {
 }
 
 function supportsScaffold(toolId: string): boolean {
-  return ['mysql', 'mariadb', 'sqlserver', 'postgres', 'snowflake', 'clickhouse', 'databricks'].includes(toolId)
+  return ['mysql', 'mariadb', 'sqlserver', 'postgres', 'snowflake', 'clickhouse', 'databricks', 'bigquery'].includes(toolId)
 }
 
 export default function ConfigEditorPage() {
@@ -623,7 +623,7 @@ export default function ConfigEditorPage() {
               title={
                 supportsScaffold(toolId)
                   ? 'Preview extracted source schema'
-                  : 'Schema preview is supported for mysql/mariadb/sqlserver/postgres/snowflake/clickhouse/databricks'
+                  : 'Schema preview is supported for mysql/mariadb/sqlserver/postgres/snowflake/clickhouse/databricks/bigquery'
               }
             >
               {previewingSchema ? 'Extracting schema…' : 'Preview schema'}
@@ -636,7 +636,7 @@ export default function ConfigEditorPage() {
               title={
                 supportsScaffold(toolId)
                   ? 'Generate template from source schema'
-                  : 'Template generation is supported for mysql/mariadb/sqlserver/postgres/snowflake/clickhouse/databricks'
+                  : 'Template generation is supported for mysql/mariadb/sqlserver/postgres/snowflake/clickhouse/databricks/bigquery'
               }
             >
               {generatingTemplate ? 'Generating template…' : 'Generate template'}

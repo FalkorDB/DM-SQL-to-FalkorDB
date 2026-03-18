@@ -1,0 +1,30 @@
+{
+  "id": "bigquery",
+  "displayName": "BigQuery → FalkorDB",
+  "description": "Load and incrementally sync tabular data from BigQuery SQL into FalkorDB using declarative mappings.",
+  "workingDir": "BigQuery-to-FalkorDB/bigquery-to-falkordb",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "BigQuery-to-FalkorDB/bigquery-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "BigQuery-to-FalkorDB/bigquery_check.yaml",
+      "BigQuery-to-FalkorDB/bigquery_sample.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9995/",
+    "format": "prometheus_text",
+    "metricPrefix": "bigquery_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}
