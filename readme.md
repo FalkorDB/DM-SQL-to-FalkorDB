@@ -14,7 +14,8 @@ It includes a control plane web tool to initiate and track data migration (ETL/C
 
 Tool list view in the Control Plane
 
-<img width="1146" height="630" alt="dm-ui-7-tools-narrow" src="https://github.com/user-attachments/assets/0a3b8d2e-3e32-4a63-bf41-278d82b413aa" />
+<img width="1155" height="632" alt="dm-sql-8-tools" src="https://github.com/user-attachments/assets/1e6557c1-447f-4deb-89ac-e9686b893060" />
+
 
 Configuration File Editor with Graph Schema preview
 
