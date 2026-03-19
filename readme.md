@@ -3,6 +3,24 @@
 This repository aggregates multiple command line loaders that migrate and/or incrementally sync data from common SQL systems into FalkorDB using declarative JSON/YAML mappings.
 It includes a control plane web tool to initiate and track data migration (ETL/CDC) runs.
 
+## Menu
+
+- [Prerequisites](#prerequisites)
+- [Tools](#tools)
+  - [BigQuery → FalkorDB](#tool-bigquery)
+  - [ClickHouse → FalkorDB](#tool-clickhouse)
+  - [Databricks → FalkorDB](#tool-databricks)
+  - [MariaDB → FalkorDB](#tool-mariadb)
+  - [MySQL → FalkorDB](#tool-mysql)
+  - [PostgreSQL → FalkorDB](#tool-postgresql)
+  - [Snowflake → FalkorDB](#tool-snowflake)
+  - [SQL Server → FalkorDB](#tool-sqlserver)
+  - [Control plane (web UI + API)](#tool-control-plane)
+- [Metrics exposed by each tool](#metrics-exposed-by-each-tool)
+- [Common concepts](#common-concepts-applies-to-the-rust-loaders)
+- [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+- [FalkorDB connection](#falkordb-connection)
+
 ## Prerequisites
 
 - Rust toolchain (Cargo)
@@ -23,6 +41,7 @@ Configuration File Editor with Graph Schema preview
 
 
 
+<a id="tool-bigquery"></a>
 ### BigQuery → FalkorDB
 
 - Location: `BigQuery-to-FalkorDB/`
@@ -43,6 +62,9 @@ cargo run --release -- --config ../bigquery_sample.yaml
 # Continuous sync
 cargo run --release -- --config ../bigquery_sample.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-clickhouse"></a>
 
 ### ClickHouse → FalkorDB
 
@@ -64,6 +86,9 @@ cargo run --release -- --config clickhouse.incremental.yaml
 # Continuous sync
 cargo run --release -- --config clickhouse.incremental.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-databricks"></a>
 
 ### Databricks → FalkorDB
 
@@ -84,6 +109,9 @@ cargo run --release -- --config path/to/config.yaml
 ```
 
 Most configs reference environment variables for secrets (for example `$DATABRICKS_TOKEN`).
+---
+
+<a id="tool-mariadb"></a>
 
 ### MariaDB → FalkorDB
 
@@ -106,6 +134,9 @@ cargo run --release -- --config mariadb.incremental.yaml
 # Continuous sync
 cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-mysql"></a>
 
 ### MySQL → FalkorDB
 
@@ -128,6 +159,9 @@ cargo run --release -- --config mysql.incremental.yaml
 # Continuous sync
 cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-postgresql"></a>
 
 ### PostgreSQL → FalkorDB
 
@@ -149,6 +183,9 @@ cargo run --release -- --config example.config.yaml
 # Continuous sync
 cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-snowflake"></a>
 
 ### Snowflake → FalkorDB
 
@@ -170,6 +207,9 @@ cargo run --release -- --config path/to/config.yaml
 # Continuous sync
 cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
 ```
+---
+
+<a id="tool-sqlserver"></a>
 
 ### SQL Server → FalkorDB
 
@@ -192,6 +232,9 @@ cargo run --release -- --config sqlserver.incremental.yaml
 # Continuous sync
 cargo run --release -- --config sqlserver.incremental.yaml --daemon --interval-secs 60
 ```
+---
+
+<a id="tool-control-plane"></a>
 
 ### Control plane (web UI + API)
 
