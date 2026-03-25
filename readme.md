@@ -10,11 +10,11 @@ It includes a control plane web tool to initiate and track data migration (ETL/C
   - [BigQuery → FalkorDB](#tool-bigquery)
   - [ClickHouse → FalkorDB](#tool-clickhouse)
   - [Databricks → FalkorDB](#tool-databricks)
-  - [Spark → FalkorDB](#tool-spark)
   - [MariaDB → FalkorDB](#tool-mariadb)
   - [MySQL → FalkorDB](#tool-mysql)
   - [PostgreSQL → FalkorDB](#tool-postgresql)
   - [Snowflake → FalkorDB](#tool-snowflake)
+  - [Spark → FalkorDB](#tool-spark)
   - [SQL Server → FalkorDB](#tool-sqlserver)
   - [Control plane (web UI + API)](#tool-control-plane)
 - [Metrics exposed by each tool](#metrics-exposed-by-each-tool)
@@ -26,7 +26,7 @@ It includes a control plane web tool to initiate and track data migration (ETL/C
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (BigQuery / ClickHouse / Databricks / Spark / MariaDB / MySQL / PostgreSQL / Snowflake / SQL Server)
+- Network access to your source system (BigQuery / ClickHouse / Databricks / MariaDB / MySQL / PostgreSQL / Snowflake / Spark / SQL Server)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -110,29 +110,6 @@ cargo run --release -- --config path/to/config.yaml
 ```
 
 Most configs reference environment variables for secrets (for example `$DATABRICKS_TOKEN`).
----
-<a id="tool-spark"></a>
-
-### Spark → FalkorDB
-
-- Location: `Spark-to-FalkorDB/`
-- What it does: Loads and incrementally syncs Spark SQL result sets into FalkorDB using a declarative mapping config.
-- Source transport: Apache Livy interactive sessions (`spark.livy_url` + `spark.session_id`), supporting table-based and custom query sources.
-- Parity controls: supports `source.query_count`, partition hints/ranges (`source.partition.*`), schema strategy controls (`preserve`/`json_stringify`/`drop_complex`/`flatten`), and edge endpoint match shorthand.
-- Hardening: includes transient Livy retry/backoff controls and clearer classified error messages for auth/throttle/timeout/statement failures.
-- Scaffolding: supports `--introspect-schema` and `--generate-template` via `SHOW TABLES` and `DESCRIBE TABLE` metadata.
-- Documentation: [Spark-to-FalkorDB/README.md](Spark-to-FalkorDB/README.md)
-- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
-
-Quick start (from the crate directory):
-
-```bash
-cd Spark-to-FalkorDB/spark-to-falkordb
-cargo build --release
-
-# Run once
-cargo run --release -- --config path/to/config.yaml
-```
 ---
 
 <a id="tool-mariadb"></a>
@@ -230,6 +207,30 @@ cargo run --release -- --config path/to/config.yaml
 
 # Continuous sync
 cargo run --release -- --config path/to/config.yaml --daemon --interval-secs 300
+```
+---
+
+<a id="tool-spark"></a>
+
+### Spark → FalkorDB
+
+- Location: `Spark-to-FalkorDB/`
+- What it does: Loads and incrementally syncs Spark SQL result sets into FalkorDB using a declarative mapping config.
+- Source transport: Apache Livy interactive sessions (`spark.livy_url` + `spark.session_id`), supporting table-based and custom query sources.
+- Parity controls: supports `source.query_count`, partition hints/ranges (`source.partition.*`), schema strategy controls (`preserve`/`json_stringify`/`drop_complex`/`flatten`), and edge endpoint match shorthand.
+- Hardening: includes transient Livy retry/backoff controls and clearer classified error messages for auth/throttle/timeout/statement failures.
+- Scaffolding: supports `--introspect-schema` and `--generate-template` via `SHOW TABLES` and `DESCRIBE TABLE` metadata.
+- Documentation: [Spark-to-FalkorDB/README.md](Spark-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+
+Quick start (from the crate directory):
+
+```bash
+cd Spark-to-FalkorDB/spark-to-falkordb
+cargo build --release
+
+# Run once
+cargo run --release -- --config path/to/config.yaml
 ```
 ---
 
@@ -430,18 +431,6 @@ Minimal example:
 - `databricks_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
-### Spark → FalkorDB (`spark_to_falkordb_`)
-
-- `spark_to_falkordb_runs`
-- `spark_to_falkordb_failed_runs`
-- `spark_to_falkordb_rows_fetched`
-- `spark_to_falkordb_rows_written`
-- `spark_to_falkordb_rows_deleted`
-- `spark_to_falkordb_mapping_runs{mapping="<name>"}`
-- `spark_to_falkordb_mapping_failed_runs{mapping="<name>"}`
-- `spark_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
-- `spark_to_falkordb_mapping_rows_written{mapping="<name>"}`
-- `spark_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ### MariaDB → FalkorDB (`mariadb_to_falkordb_`)
 
@@ -495,6 +484,19 @@ Minimal example:
 - `snowflake_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `snowflake_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
+### Spark → FalkorDB (`spark_to_falkordb_`)
+
+- `spark_to_falkordb_runs`
+- `spark_to_falkordb_failed_runs`
+- `spark_to_falkordb_rows_fetched`
+- `spark_to_falkordb_rows_written`
+- `spark_to_falkordb_rows_deleted`
+- `spark_to_falkordb_mapping_runs{mapping="<name>"}`
+- `spark_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `spark_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `spark_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `spark_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
 ### SQL Server → FalkorDB (`sqlserver_to_falkordb_`)
 
 - `sqlserver_to_falkordb_runs`
@@ -528,11 +530,11 @@ Most SQL-style loaders in this repository support scaffold mode:
 - BigQuery
 - ClickHouse
 - Databricks
-- Spark
 - MariaDB
 - MySQL
 - PostgreSQL
 - Snowflake
+- Spark
 - SQL Server
 
 Scaffold mode is exposed through CLI flags:
