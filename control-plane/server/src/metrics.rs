@@ -342,6 +342,7 @@ fn default_metrics_port(tool_id: &str) -> u16 {
         "snowflake" => 9992,
         "postgres" => 9993,
         "databricks" => 9994,
+        "spark" => 9997,
         _ => 9999,
     }
 }

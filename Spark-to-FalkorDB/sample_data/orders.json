@@ -1,0 +1,4 @@
+{"order_id":9001,"customer_id":1,"product_id":101,"quantity":1,"ordered_at":"2026-03-05T13:10:00Z","updated_at":"2026-03-05T13:10:00Z"}
+{"order_id":9002,"customer_id":1,"product_id":103,"quantity":2,"ordered_at":"2026-03-05T13:15:00Z","updated_at":"2026-03-05T13:15:00Z"}
+{"order_id":9003,"customer_id":2,"product_id":102,"quantity":1,"ordered_at":"2026-03-06T15:00:00Z","updated_at":"2026-03-06T15:00:00Z"}
+{"order_id":9004,"customer_id":3,"product_id":101,"quantity":1,"ordered_at":"2026-03-07T09:45:00Z","updated_at":"2026-03-07T09:45:00Z"}

@@ -1,0 +1,10 @@
+# Ignore Rust build artifacts
+/target/
+**/target/
+
+# MacOS filesystem noise
+.DS_Store
+
+# Editor/IDE files
+.idea/
+.vscode/

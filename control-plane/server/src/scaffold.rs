@@ -912,6 +912,7 @@ fn supports_scaffold(tool_id: &str) -> bool {
             | "clickhouse"
             | "databricks"
             | "bigquery"
+            | "spark"
     )
 }
 

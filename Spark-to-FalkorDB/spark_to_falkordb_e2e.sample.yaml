@@ -1,0 +1,93 @@
+spark:
+  livy_url: "http://127.0.0.1:8998"
+  session_id: 0
+  statement_kind: "sql"
+  query_timeout_ms: 60000
+  poll_interval_ms: 300
+  max_poll_attempts: 400
+  max_retries: 3
+  retry_backoff_ms: 250
+  retry_backoff_max_ms: 5000
+  schema_strategy: preserve
+  flatten_max_depth: 2
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "oz_spark_e2e"
+  max_unwind_batch_size: 500
+  indexes:
+    - labels: ["Customer"]
+      property: "id"
+    - labels: ["Product"]
+      property: "id"
+
+state:
+  backend: file
+  file_path: "Spark-to-FalkorDB/sample_data/spark_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      select: "SELECT customer_id, name, email, updated_at FROM json.`file:///workspace/data/customers.json`"
+      query_count: 10000
+    mode: full
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "id"
+    properties:
+      name:
+        column: "name"
+      email:
+        column: "email"
+      updated_at:
+        column: "updated_at"
+
+  - type: node
+    name: products
+    source:
+      select: "SELECT product_id, name, category, price, updated_at FROM json.`file:///workspace/data/products.json`"
+      query_count: 10000
+    mode: full
+    labels: ["Product"]
+    key:
+      column: "product_id"
+      property: "id"
+    properties:
+      name:
+        column: "name"
+      category:
+        column: "category"
+      price:
+        column: "price"
+      updated_at:
+        column: "updated_at"
+
+  - type: edge
+    name: customer_orders
+    source:
+      select: "SELECT order_id, customer_id, product_id, quantity, ordered_at, updated_at FROM json.`file:///workspace/data/orders.json`"
+      query_count: 10000
+    mode: full
+    relationship: "ORDERED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_column: "customer_id"
+      match_property: "id"
+    to:
+      node_mapping: products
+      match_on:
+        column: "product_id"
+        property: "id"
+    key:
+      column: "order_id"
+      property: "order_id"
+    properties:
+      quantity:
+        column: "quantity"
+      ordered_at:
+        column: "ordered_at"
+      updated_at:
+        column: "updated_at"

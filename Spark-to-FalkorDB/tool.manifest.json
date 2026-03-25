@@ -1,0 +1,27 @@
+{
+  "id": "spark",
+  "displayName": "Spark → FalkorDB",
+  "description": "Load and incrementally sync tabular data from Apache Spark SQL into FalkorDB using declarative mappings.",
+  "workingDir": "Spark-to-FalkorDB/spark-to-falkordb",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Spark-to-FalkorDB/spark-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": false,
+    "supports_purge_graph": false,
+    "supports_purge_mapping": false,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": []
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9997/",
+    "format": "prometheus_text",
+    "metricPrefix": "spark_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}
