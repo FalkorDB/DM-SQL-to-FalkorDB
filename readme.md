@@ -1,7 +1,7 @@
 # FalkorDB migration & sync CLI tools
 
-This repository aggregates multiple command line loaders that migrate and/or incrementally sync data from common SQL systems into FalkorDB using declarative JSON/YAML mappings.
-It includes a control plane web tool to initiate and track data migration (ETL/CDC) runs.
+This repository aggregates multiple command line loaders that migrate and/or incrementally sync data from common SQL supporting systems into FalkorDB using declarative JSON/YAML mappings.
+It includes a control plane web tool to configure, initiate and track data migration (ETL/CDC) runs.
 
 ## Menu
 
