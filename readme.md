@@ -303,6 +303,16 @@ Configuration:
 - `CONTROL_PLANE_DATA_DIR` (default: `control-plane/data/`)
 - `CONTROL_PLANE_UI_DIST` (default: `control-plane/ui/dist/`; if missing, the API still works)
 - `CONTROL_PLANE_API_KEY` (optional; if set, calls must include `Authorization: Bearer <key>`)
+- `CONTROL_PLANE_ENABLED_TOOLS` (optional; comma-separated allow-list, e.g. `postgres,snowflake`)
+- `CONTROL_PLANE_EXECUTION_BACKEND` (`local` or `kubernetes`; default is `local`)
+- `CONTROL_PLANE_K8S_NAMESPACE` (namespace where run workloads are created)
+- `CONTROL_PLANE_K8S_RUNNER_IMAGE` (single multi-tool runner image reference)
+- `CONTROL_PLANE_K8S_IMAGE_PULL_POLICY` (runner image pull policy)
+- `CONTROL_PLANE_K8S_SERVICE_ACCOUNT` (service account assigned to run workloads)
+- `CONTROL_PLANE_K8S_SHARED_PVC` (optional shared PVC for persistent file-backed state)
+- `CONTROL_PLANE_K8S_ENV_SECRET` / `CONTROL_PLANE_K8S_ENV_CONFIGMAP` (optional env sources projected into run pods)
+- `CONTROL_PLANE_K8S_KUBECTL_BIN` (kubectl binary path; default `kubectl`)
+- `CONTROL_PLANE_K8S_BINARY_DIR` (runner image directory containing tool binaries; default `/opt/falkordb/bin`)
 
 Notes:
 
@@ -312,7 +322,7 @@ Notes:
 - The UI has an "API key" button that stores the key in browser localStorage.
 - The log stream endpoint uses Server-Sent Events. Since `EventSource` can’t set headers, the UI falls back to `?api_key=<token>` for SSE when an API key is configured.
 - Runtime data lives under `CONTROL_PLANE_DATA_DIR` (by default `control-plane/data/`), including a SQLite DB (`control-plane.sqlite`) and per-run artifacts/logs under `runs/<run_id>/`.
-- Runs are executed locally on the machine running the control plane server (it spawns the underlying CLI tools).
+- Run execution can be local (`CONTROL_PLANE_EXECUTION_BACKEND=local`) or Kubernetes-native (`CONTROL_PLANE_EXECUTION_BACKEND=kubernetes`) while keeping one control-plane deployment.
 - Metrics endpoints/ports are internal collector settings from each tool manifest and are not shown in the Metrics UI.
 
 Selected API endpoints:
@@ -330,6 +340,74 @@ Selected API endpoints:
 - `GET /api/runs/:run_id/logs` (persisted log lines for viewing past runs)
 - `GET /api/metrics` (all tools metrics snapshot; optional `?config_id=<uuid>` to scope to one ETL config)
 - `GET /api/metrics/:tool_id` (single tool metrics snapshot; optional `?config_id=<uuid>`)
+
+### Container + Kubernetes single-deployment model
+
+This repository now includes a single-release, multi-tool deployment path:
+
+- `control-plane/Dockerfile`: builds the control-plane API + UI image.
+- `docker/runner.Dockerfile`: builds one **multi-tool runner** image containing all migration binaries.
+- `docker/build-images.sh <version>`: builds both images with the same version tag.
+- `deploy/helm/dm-sql-to-falkordb/`: Helm chart for one control-plane deployment that can run multiple tools.
+
+Example image build:
+
+```bash
+./docker/build-images.sh v0.1.0 ghcr.io/falkordb
+```
+
+Example Helm install (single control plane, PostgreSQL + Snowflake enabled together):
+
+```bash
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb \
+  --namespace dm-sql --create-namespace \
+  --set global.version=v0.1.0 \
+  --set tools.enabled.postgres=true \
+  --set tools.enabled.snowflake=true \
+  --set tools.enabled.mysql=false \
+  --set tools.enabled.mariadb=false \
+  --set tools.enabled.clickhouse=false \
+  --set tools.enabled.bigquery=false \
+  --set tools.enabled.databricks=false \
+  --set tools.enabled.spark=false \
+  --set tools.enabled.sqlserver=false
+```
+
+This keeps operations on one control-plane instance/version while enabling any subset of tools.
+
+### Kubernetes deployment path integration tests
+
+The control-plane server includes Kubernetes-path integration tests (with a mocked `kubectl` binary) in `control-plane/server/src/runs.rs`.
+These tests validate:
+
+- one-shot run creation in Kubernetes backend mode,
+- persisted run execution references (`backend`, workload kind/name/namespace),
+- job completion handling,
+- daemon stop flow with deployment/configmap cleanup commands.
+
+Run only the Kubernetes deployment path tests:
+
+```bash
+cargo test --manifest-path control-plane/server/Cargo.toml kubernetes_
+```
+
+Run all control-plane server tests:
+
+```bash
+cargo test --manifest-path control-plane/server/Cargo.toml
+```
+
+Setup prerequisites:
+
+- Rust toolchain (same as normal server development)
+- No live Kubernetes cluster required for these tests (they use an isolated temporary repo, SQLite DB, and a mocked kubectl executable)
+
+Optional real-cluster smoke setup (manual validation):
+
+1. Build images with one version tag using `./docker/build-images.sh <version> <registry>`.
+2. Push images to a registry reachable by your cluster.
+3. Install Helm chart from `deploy/helm/dm-sql-to-falkordb` with `--set global.version=<version>`.
+4. Enable desired tool set via `--set tools.enabled.<tool>=true/false`.
 
 ### Control plane metrics option (`tool.manifest.json`)
 

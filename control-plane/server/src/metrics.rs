@@ -7,8 +7,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::models::{bad_request, not_found, ApiResult};
 use crate::models::AppState;
+use crate::models::{bad_request, not_found, ApiResult};
 use crate::tools::Tool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,9 +143,9 @@ async fn load_persisted_tool_metrics_or_default(
                 "No persisted metrics snapshot yet for config_id '{config_id}'. Start a run with this config to collect metrics."
             ));
         } else {
-            fallback
-                .warnings
-                .push("No persisted metrics snapshot yet. Start a run to collect metrics.".to_string());
+            fallback.warnings.push(
+                "No persisted metrics snapshot yet. Start a run to collect metrics.".to_string(),
+            );
         }
         return fallback;
     };
@@ -209,8 +209,22 @@ fn empty_tool_metrics_view(tool: &Tool) -> ToolMetricsView {
 }
 
 pub async fn collect_tool_metrics(tool: &Tool) -> ToolMetricsView {
+    collect_tool_metrics_with_endpoint(tool, None).await
+}
+
+pub async fn collect_tool_metrics_with_endpoint(
+    tool: &Tool,
+    endpoint_override: Option<&str>,
+) -> ToolMetricsView {
     let mut view = empty_tool_metrics_view(tool);
-    let spec = resolve_metrics_spec(tool);
+    let mut spec = resolve_metrics_spec(tool);
+    if let Some(endpoint) = endpoint_override
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        spec.endpoint = endpoint.to_string();
+        view.endpoint = Some(spec.endpoint.clone());
+    }
     view.snapshot_source = Some("live".to_string());
 
     if spec.format != "prometheus_text" {
@@ -235,7 +249,10 @@ pub async fn collect_tool_metrics(tool: &Tool) -> ToolMetricsView {
     let resp = match client.get(&spec.endpoint).send().await {
         Ok(r) => r,
         Err(e) => {
-            view.error = Some(format!("Failed to fetch metrics from {}: {e}", spec.endpoint));
+            view.error = Some(format!(
+                "Failed to fetch metrics from {}: {e}",
+                spec.endpoint
+            ));
             return view;
         }
     };

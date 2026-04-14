@@ -19,7 +19,44 @@ pub struct AppState {
     pub tools: ToolRegistry,
     pub store: Store,
     pub runs: RunManager,
+    pub execution: ExecutionConfig,
     pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ExecutionBackend {
+    #[default]
+    Local,
+    Kubernetes,
+}
+
+impl ExecutionBackend {
+    pub fn parse(raw: &str) -> anyhow::Result<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "local" => Ok(Self::Local),
+            "kubernetes" | "k8s" => Ok(Self::Kubernetes),
+            other => anyhow::bail!("unsupported execution backend '{other}'"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KubernetesExecutionConfig {
+    pub namespace: String,
+    pub runner_image: String,
+    pub image_pull_policy: String,
+    pub service_account: Option<String>,
+    pub shared_pvc_name: Option<String>,
+    pub env_secret_name: Option<String>,
+    pub env_configmap_name: Option<String>,
+    pub kubectl_bin: String,
+    pub binary_dir: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionConfig {
+    pub backend: ExecutionBackend,
+    pub kubernetes: KubernetesExecutionConfig,
 }
 
 #[derive(Serialize)]
@@ -46,6 +83,24 @@ pub enum RunStatus {
     Succeeded,
     Failed,
     Stopped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunBackend {
+    #[default]
+    Local,
+    Kubernetes,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RunExecutionRef {
+    pub kind: Option<String>,
+    pub name: Option<String>,
+    pub namespace: Option<String>,
+    pub pod_label_selector: Option<String>,
+    pub config_map_name: Option<String>,
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +136,10 @@ pub struct RunRecord {
     pub config_id: Uuid,
     pub mode: RunMode,
     pub status: RunStatus,
+    #[serde(default)]
+    pub backend: RunBackend,
+    #[serde(default)]
+    pub execution_ref: Option<RunExecutionRef>,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub exit_code: Option<i64>,

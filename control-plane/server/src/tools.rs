@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -7,9 +8,9 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
-use crate::models::{ApiResult, ToolCapabilities, ToolSummary};
-use crate::models::{bad_request, not_found};
 use crate::models::AppState;
+use crate::models::{bad_request, not_found};
+use crate::models::{ApiResult, ToolCapabilities, ToolSummary};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolManifest {
@@ -24,6 +25,21 @@ pub struct ToolManifest {
     pub config: ToolConfigSpec,
     #[serde(default)]
     pub metrics: Option<ToolMetricsSpec>,
+}
+
+fn parse_enabled_tools_env() -> Option<HashSet<String>> {
+    let raw = std::env::var("CONTROL_PLANE_ENABLED_TOOLS").ok()?;
+    let parsed = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect::<HashSet<_>>();
+    if parsed.is_empty() {
+        None
+    } else {
+        Some(parsed)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +102,7 @@ pub struct ToolRegistry {
 impl ToolRegistry {
     pub async fn load_from_repo(repo_root: &Path) -> anyhow::Result<Self> {
         let mut by_id = HashMap::new();
+        let enabled_tools = parse_enabled_tools_env();
 
         for entry in WalkDir::new(repo_root)
             .follow_links(false)
@@ -104,6 +121,12 @@ impl ToolRegistry {
             let raw = tokio::fs::read_to_string(&path).await?;
             let manifest: ToolManifest = serde_json::from_str(&raw)
                 .with_context(|| format!("invalid manifest json: {}", path.display()))?;
+
+            if let Some(enabled) = &enabled_tools {
+                if !enabled.contains(&manifest.id) {
+                    continue;
+                }
+            }
 
             if by_id.contains_key(&manifest.id) {
                 anyhow::bail!("duplicate tool id '{}' in {}", manifest.id, path.display());
@@ -180,7 +203,10 @@ impl Tool {
         repo_root.join(&self.manifest.working_dir)
     }
 
-    pub fn executable_command(&self, repo_root: &Path) -> anyhow::Result<(String, Vec<String>, PathBuf)> {
+    pub fn executable_command(
+        &self,
+        repo_root: &Path,
+    ) -> anyhow::Result<(String, Vec<String>, PathBuf)> {
         let cwd = self.working_dir_abs(repo_root);
 
         match &self.manifest.executable {
@@ -213,13 +239,44 @@ impl Tool {
         }
     }
 
+    pub fn runner_binary_name(&self, repo_root: &Path) -> anyhow::Result<String> {
+        match &self.manifest.executable {
+            ExecutableSpec::Path { path } => {
+                let file_name = Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("unable to determine binary filename for '{}'", path)
+                    })?;
+                Ok(file_name.to_string())
+            }
+            ExecutableSpec::Cargo {
+                manifest_path, bin, ..
+            } => {
+                if let Some(bin) = bin {
+                    return Ok(bin.clone());
+                }
+
+                let manifest_abs = repo_root.join(manifest_path);
+                infer_cargo_package_name(&manifest_abs).with_context(|| {
+                    format!(
+                        "failed to infer runner binary from Cargo manifest '{}'",
+                        manifest_abs.display()
+                    )
+                })
+            }
+        }
+    }
+
     pub fn validate_run_request(
         &self,
         mode: &crate::models::RunMode,
         purge_graph: bool,
         purge_mappings: &[String],
     ) -> ApiResult<()> {
-        if matches!(mode, crate::models::RunMode::Daemon) && !self.manifest.capabilities.supports_daemon {
+        if matches!(mode, crate::models::RunMode::Daemon)
+            && !self.manifest.capabilities.supports_daemon
+        {
             return bad_request("tool does not support daemon mode".to_string());
         }
 
@@ -233,4 +290,31 @@ impl Tool {
 
         Ok(())
     }
+}
+
+fn infer_cargo_package_name(manifest_path: &Path) -> anyhow::Result<String> {
+    let raw = fs::read_to_string(manifest_path)?;
+    let mut in_package_section = false;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_package_section = trimmed == "[package]";
+            continue;
+        }
+        if !in_package_section {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("name") {
+            let Some((_, value)) = rest.split_once('=') else {
+                continue;
+            };
+            let candidate = value.trim().trim_matches('"');
+            if !candidate.is_empty() {
+                return Ok(candidate.to_string());
+            }
+        }
+    }
+
+    anyhow::bail!("package.name not found in {}", manifest_path.display())
 }

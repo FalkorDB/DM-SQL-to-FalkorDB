@@ -38,6 +38,58 @@ struct Cli {
     /// Directory containing the built UI (Vite dist). If not present, API still works.
     #[arg(long, env = "CONTROL_PLANE_UI_DIST")]
     ui_dist: Option<PathBuf>,
+
+    /// Execution backend for tool runs: local | kubernetes.
+    #[arg(long, env = "CONTROL_PLANE_EXECUTION_BACKEND", default_value = "local")]
+    execution_backend: String,
+
+    /// Namespace used by the kubernetes execution backend.
+    #[arg(long, env = "CONTROL_PLANE_K8S_NAMESPACE", default_value = "default")]
+    k8s_namespace: String,
+
+    /// Multi-tool runner image used by the kubernetes execution backend.
+    #[arg(
+        long,
+        env = "CONTROL_PLANE_K8S_RUNNER_IMAGE",
+        default_value = "ghcr.io/falkordb/dm-sql-to-falkordb-runner:latest"
+    )]
+    k8s_runner_image: String,
+
+    /// Image pull policy used by the kubernetes execution backend.
+    #[arg(
+        long,
+        env = "CONTROL_PLANE_K8S_IMAGE_PULL_POLICY",
+        default_value = "IfNotPresent"
+    )]
+    k8s_image_pull_policy: String,
+
+    /// Optional service account used for runner workloads.
+    #[arg(long, env = "CONTROL_PLANE_K8S_SERVICE_ACCOUNT")]
+    k8s_service_account: Option<String>,
+
+    /// Optional shared PVC name mounted into runner workloads for persistent state.
+    #[arg(long, env = "CONTROL_PLANE_K8S_SHARED_PVC")]
+    k8s_shared_pvc: Option<String>,
+
+    /// Optional Secret name to project tool environment variables into runner pods.
+    #[arg(long, env = "CONTROL_PLANE_K8S_ENV_SECRET")]
+    k8s_env_secret: Option<String>,
+
+    /// Optional ConfigMap name to project tool environment variables into runner pods.
+    #[arg(long, env = "CONTROL_PLANE_K8S_ENV_CONFIGMAP")]
+    k8s_env_configmap: Option<String>,
+
+    /// kubectl binary path used for kubernetes operations.
+    #[arg(long, env = "CONTROL_PLANE_K8S_KUBECTL_BIN", default_value = "kubectl")]
+    k8s_kubectl_bin: String,
+
+    /// Directory inside runner images where migration binaries are located.
+    #[arg(
+        long,
+        env = "CONTROL_PLANE_K8S_BINARY_DIR",
+        default_value = "/opt/falkordb/bin"
+    )]
+    k8s_binary_dir: String,
 }
 
 #[tokio::main]
@@ -72,12 +124,29 @@ async fn main() -> anyhow::Result<()> {
 
     let runs = RunManager::new(data_dir.join("runs"));
 
+    let execution_backend = models::ExecutionBackend::parse(&cli.execution_backend)
+        .context("failed to parse CONTROL_PLANE_EXECUTION_BACKEND")?;
+
     let app_state = models::AppState {
         repo_root: repo_root.clone(),
         data_dir,
         tools,
         store,
         runs,
+        execution: models::ExecutionConfig {
+            backend: execution_backend,
+            kubernetes: models::KubernetesExecutionConfig {
+                namespace: cli.k8s_namespace,
+                runner_image: cli.k8s_runner_image,
+                image_pull_policy: cli.k8s_image_pull_policy,
+                service_account: cli.k8s_service_account,
+                shared_pvc_name: cli.k8s_shared_pvc,
+                env_secret_name: cli.k8s_env_secret,
+                env_configmap_name: cli.k8s_env_configmap,
+                kubectl_bin: cli.k8s_kubectl_bin,
+                binary_dir: cli.k8s_binary_dir,
+            },
+        },
         api_key: std::env::var("CONTROL_PLANE_API_KEY")
             .ok()
             .filter(|v| !v.is_empty()),

@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dm-sql-to-falkordb.fullname" . }}
+  labels:
+    {{- include "dm-sql-to-falkordb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controlPlane.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dm-sql-to-falkordb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dm-sql-to-falkordb.selectorLabels" . | nindent 8 }}
+      {{- with .Values.controlPlane.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "dm-sql-to-falkordb.serviceAccountName" . }}
+      containers:
+        - name: control-plane
+          image: {{ include "dm-sql-to-falkordb.controlPlaneImage" . }}
+          imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3003
+              protocol: TCP
+          env:
+            - name: CONTROL_PLANE_BIND
+              value: {{ .Values.controlPlane.bindAddress | quote }}
+            - name: CONTROL_PLANE_EXECUTION_BACKEND
+              value: {{ .Values.controlPlane.executionBackend | quote }}
+            - name: CONTROL_PLANE_DATA_DIR
+              value: /var/lib/falkordb-control-plane
+            - name: CONTROL_PLANE_ENABLED_TOOLS
+              value: {{ include "dm-sql-to-falkordb.enabledToolsCsv" . | quote }}
+            - name: CONTROL_PLANE_K8S_NAMESPACE
+              value: {{ include "dm-sql-to-falkordb.runnerNamespace" . | quote }}
+            - name: CONTROL_PLANE_K8S_RUNNER_IMAGE
+              value: {{ include "dm-sql-to-falkordb.runnerImage" . | quote }}
+            - name: CONTROL_PLANE_K8S_IMAGE_PULL_POLICY
+              value: {{ .Values.kubernetesRunner.imagePullPolicy | quote }}
+            - name: CONTROL_PLANE_K8S_KUBECTL_BIN
+              value: kubectl
+            - name: CONTROL_PLANE_K8S_BINARY_DIR
+              value: {{ .Values.kubernetesRunner.binaryDir | quote }}
+            {{- if .Values.kubernetesRunner.serviceAccountName }}
+            - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
+              value: {{ .Values.kubernetesRunner.serviceAccountName | quote }}
+            {{- else }}
+            - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
+              value: {{ include "dm-sql-to-falkordb.serviceAccountName" . | quote }}
+            {{- end }}
+            {{- if .Values.kubernetesRunner.sharedPvc.enabled }}
+            - name: CONTROL_PLANE_K8S_SHARED_PVC
+              value: {{ include "dm-sql-to-falkordb.runnerSharedPvcName" . | quote }}
+            {{- end }}
+            {{- if .Values.kubernetesRunner.envSecretName }}
+            - name: CONTROL_PLANE_K8S_ENV_SECRET
+              value: {{ .Values.kubernetesRunner.envSecretName | quote }}
+            {{- end }}
+            {{- if .Values.kubernetesRunner.envConfigMapName }}
+            - name: CONTROL_PLANE_K8S_ENV_CONFIGMAP
+              value: {{ .Values.kubernetesRunner.envConfigMapName | quote }}
+            {{- end }}
+            {{- if .Values.controlPlane.apiKey }}
+            - name: CONTROL_PLANE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dm-sql-to-falkordb.fullname" . }}-api-key
+                  key: CONTROL_PLANE_API_KEY
+            {{- end }}
+            {{- with .Values.controlPlane.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
+          volumeMounts:
+            - name: control-plane-data
+              mountPath: /var/lib/falkordb-control-plane
+      volumes:
+        - name: control-plane-data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dm-sql-to-falkordb.controlPlaneDataPvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.controlPlane.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

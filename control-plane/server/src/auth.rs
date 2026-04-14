@@ -34,7 +34,9 @@ pub async fn require_api_key(
         .query()
         .and_then(|q| extract_query_param(q, "api_key"));
 
-    let token = header_token.or(query_token).ok_or(StatusCode::UNAUTHORIZED)?;
+    let token = header_token
+        .or(query_token)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     if token != expected {
         return Err(StatusCode::UNAUTHORIZED);

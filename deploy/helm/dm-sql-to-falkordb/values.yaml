@@ -1,0 +1,76 @@
+global:
+  version: "latest"
+
+images:
+  controlPlane:
+    repository: ghcr.io/falkordb/dm-sql-to-falkordb-control-plane
+    tag: ""
+    pullPolicy: IfNotPresent
+  runner:
+    repository: ghcr.io/falkordb/dm-sql-to-falkordb-runner
+    tag: ""
+
+tools:
+  enabled:
+    bigquery: true
+    clickhouse: true
+    databricks: true
+    mariadb: true
+    mysql: true
+    postgres: true
+    snowflake: true
+    spark: true
+    sqlserver: true
+
+controlPlane:
+  replicaCount: 1
+  executionBackend: kubernetes
+  bindAddress: "0.0.0.0:3003"
+  apiKey: ""
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccount:
+    create: true
+    name: ""
+
+service:
+  type: ClusterIP
+  port: 3003
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: dm-sql-to-falkordb.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+kubernetesRunner:
+  namespaceOverride: ""
+  imagePullPolicy: IfNotPresent
+  serviceAccountName: ""
+  envSecretName: ""
+  envConfigMapName: ""
+  binaryDir: /opt/falkordb/bin
+  sharedPvc:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi

@@ -9,17 +9,31 @@ use serde::Deserialize;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{
-    ApiResult, ConfigRecord, ConfigStateInfo, CreateConfigRequest, RunMode, RunRecord, RunStatus,
-    UpdateConfigRequest,
-};
-use crate::models::{bad_request, not_found};
 use crate::models::AppState;
+use crate::models::{bad_request, not_found};
+use crate::models::{
+    ApiResult, ConfigRecord, ConfigStateInfo, CreateConfigRequest, RunBackend, RunExecutionRef,
+    RunMode, RunRecord, RunStatus, UpdateConfigRequest,
+};
 use crate::tools::ToolRegistry;
 
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
+}
+
+fn run_backend_to_str(b: &RunBackend) -> &'static str {
+    match b {
+        RunBackend::Local => "local",
+        RunBackend::Kubernetes => "kubernetes",
+    }
+}
+
+fn run_backend_from_str(s: &str) -> RunBackend {
+    match s {
+        "kubernetes" => RunBackend::Kubernetes,
+        _ => RunBackend::Local,
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -46,7 +60,8 @@ impl Store {
     pub async fn upsert_tools(&self, tools: &ToolRegistry) -> anyhow::Result<()> {
         let now = Utc::now().to_rfc3339();
         for (id, manifest_json) in tools.as_json_by_id() {
-            let manifest_json = serde_json::to_string(&manifest_json).unwrap_or_else(|_| "{}".to_string());
+            let manifest_json =
+                serde_json::to_string(&manifest_json).unwrap_or_else(|_| "{}".to_string());
             sqlx::query(
                 "INSERT INTO tools (id, manifest_json, loaded_at) VALUES (?1, ?2, ?3)\
                  ON CONFLICT(id) DO UPDATE SET manifest_json=excluded.manifest_json, loaded_at=excluded.loaded_at",
@@ -128,15 +143,13 @@ impl Store {
 
         let now = Utc::now();
 
-        sqlx::query(
-            "UPDATE configs SET name=?1, content=?2, updated_at=?3 WHERE id=?4",
-        )
-        .bind(&req.name)
-        .bind(&req.content)
-        .bind(now.to_rfc3339())
-        .bind(config_id.to_string())
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE configs SET name=?1, content=?2, updated_at=?3 WHERE id=?4")
+            .bind(&req.name)
+            .bind(&req.content)
+            .bind(now.to_rfc3339())
+            .bind(config_id.to_string())
+            .execute(&self.pool)
+            .await?;
 
         Ok(Some(ConfigRecord {
             id: existing.id,
@@ -149,14 +162,21 @@ impl Store {
     }
 
     pub async fn insert_run(&self, run: &RunRecord) -> anyhow::Result<()> {
+        let execution_ref_json = run
+            .execution_ref
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         sqlx::query(
-            "INSERT INTO runs (id, tool_id, config_id, mode, status, started_at, ended_at, exit_code, error) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO runs (id, tool_id, config_id, mode, status, backend, execution_ref_json, started_at, ended_at, exit_code, error) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )
         .bind(run.id.to_string())
         .bind(&run.tool_id)
         .bind(run.config_id.to_string())
         .bind(run_mode_to_str(&run.mode))
         .bind(run_status_to_str(&run.status))
+        .bind(run_backend_to_str(&run.backend))
+        .bind(execution_ref_json)
         .bind(run.started_at.to_rfc3339())
         .bind(run.ended_at.map(|t| t.to_rfc3339()))
         .bind(run.exit_code)
@@ -175,16 +195,14 @@ impl Store {
         exit_code: Option<i64>,
         error: Option<String>,
     ) -> anyhow::Result<()> {
-        sqlx::query(
-            "UPDATE runs SET status=?1, ended_at=?2, exit_code=?3, error=?4 WHERE id=?5",
-        )
-        .bind(run_status_to_str(&status))
-        .bind(ended_at.to_rfc3339())
-        .bind(exit_code)
-        .bind(error)
-        .bind(run_id.to_string())
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE runs SET status=?1, ended_at=?2, exit_code=?3, error=?4 WHERE id=?5")
+            .bind(run_status_to_str(&status))
+            .bind(ended_at.to_rfc3339())
+            .bind(exit_code)
+            .bind(error)
+            .bind(run_id.to_string())
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -192,14 +210,14 @@ impl Store {
     pub async fn list_runs(&self, tool_id: Option<&str>) -> anyhow::Result<Vec<RunRecord>> {
         let rows = if let Some(tool_id) = tool_id {
             sqlx::query_as::<_, RunRow>(
-                "SELECT id, tool_id, config_id, mode, status, started_at, ended_at, exit_code, error FROM runs WHERE tool_id=?1 ORDER BY started_at DESC",
+                "SELECT id, tool_id, config_id, mode, status, backend, execution_ref_json, started_at, ended_at, exit_code, error FROM runs WHERE tool_id=?1 ORDER BY started_at DESC",
             )
             .bind(tool_id)
             .fetch_all(&self.pool)
             .await?
         } else {
             sqlx::query_as::<_, RunRow>(
-                "SELECT id, tool_id, config_id, mode, status, started_at, ended_at, exit_code, error FROM runs ORDER BY started_at DESC",
+                "SELECT id, tool_id, config_id, mode, status, backend, execution_ref_json, started_at, ended_at, exit_code, error FROM runs ORDER BY started_at DESC",
             )
             .fetch_all(&self.pool)
             .await?
@@ -210,7 +228,7 @@ impl Store {
 
     pub async fn get_run(&self, run_id: Uuid) -> anyhow::Result<Option<RunRecord>> {
         let row = sqlx::query_as::<_, RunRow>(
-            "SELECT id, tool_id, config_id, mode, status, started_at, ended_at, exit_code, error FROM runs WHERE id=?1",
+            "SELECT id, tool_id, config_id, mode, status, backend, execution_ref_json, started_at, ended_at, exit_code, error FROM runs WHERE id=?1",
         )
         .bind(run_id.to_string())
         .fetch_optional(&self.pool)
@@ -240,7 +258,6 @@ impl Store {
 
         Ok(())
     }
-
 
     pub async fn get_latest_tool_metrics_snapshot(
         &self,
@@ -302,6 +319,8 @@ struct RunRow {
     config_id: String,
     mode: String,
     status: String,
+    backend: Option<String>,
+    execution_ref_json: Option<String>,
     started_at: String,
     ended_at: Option<String>,
     exit_code: Option<i64>,
@@ -314,6 +333,17 @@ impl TryFrom<RunRow> for RunRecord {
     fn try_from(r: RunRow) -> Result<Self, Self::Error> {
         let mode: RunMode = run_mode_from_str(&r.mode);
         let status: RunStatus = run_status_from_str(&r.status);
+        let backend: RunBackend = r
+            .backend
+            .as_deref()
+            .map(run_backend_from_str)
+            .unwrap_or(RunBackend::Local);
+        let execution_ref = r
+            .execution_ref_json
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+            .map(serde_json::from_str::<RunExecutionRef>)
+            .transpose()?;
 
         Ok(Self {
             id: Uuid::parse_str(&r.id)?,
@@ -321,6 +351,8 @@ impl TryFrom<RunRow> for RunRecord {
             config_id: Uuid::parse_str(&r.config_id)?,
             mode,
             status,
+            backend,
+            execution_ref,
             started_at: DateTime::parse_from_rfc3339(&r.started_at)?.with_timezone(&Utc),
             ended_at: r
                 .ended_at
@@ -531,8 +563,12 @@ pub async fn get_config_state(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let state_file: StateFile = serde_json::from_str(&raw)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("invalid state json: {e}")))?;
+    let state_file: StateFile = serde_json::from_str(&raw).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("invalid state json: {e}"),
+        )
+    })?;
 
     if state_file.mappings.is_empty() {
         out.watermarks = Some(HashMap::new());
@@ -610,7 +646,8 @@ pub async fn clear_config_state(
     if let Some(canon) = &resolved_canon {
         if !canon.starts_with(&repo_root_canon) && !canon.starts_with(&data_dir_canon) {
             return bad_request(
-                "refusing to delete state file outside control-plane repo_root/data_dir".to_string(),
+                "refusing to delete state file outside control-plane repo_root/data_dir"
+                    .to_string(),
             );
         }
     }
