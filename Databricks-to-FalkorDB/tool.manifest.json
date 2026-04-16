@@ -16,7 +16,9 @@
   },
   "config": {
     "fileExtensions": [".yaml", ".yml", ".json"],
-    "examples": []
+    "examples": [
+      "Databricks-to-FalkorDB/databricks_sample_to_falkordb.yaml"
+    ]
   },
   "metrics": {
     "endpoint": "http://127.0.0.1:9994/",

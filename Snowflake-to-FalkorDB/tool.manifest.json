@@ -17,8 +17,6 @@
   "config": {
     "fileExtensions": [".yaml", ".yml", ".json"],
     "examples": [
-      "Snowflake-to-FalkorDB/snowflake_check.yaml",
-      "Snowflake-to-FalkorDB/snowflake_menu.yaml",
       "Snowflake-to-FalkorDB/snowflake_stream_example.yaml",
       "Snowflake-to-FalkorDB/example.config.json"
     ]

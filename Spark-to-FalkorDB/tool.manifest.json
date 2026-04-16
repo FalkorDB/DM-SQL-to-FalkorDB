@@ -16,7 +16,10 @@
   },
   "config": {
     "fileExtensions": [".yaml", ".yml", ".json"],
-    "examples": []
+    "examples": [
+      "Spark-to-FalkorDB/spark_to_falkordb_e2e.sample.yaml",
+      "Spark-to-FalkorDB/spark_to_falkordb_e2e.tables.sample.yaml"
+    ]
   },
   "metrics": {
     "endpoint": "http://127.0.0.1:9997/",
