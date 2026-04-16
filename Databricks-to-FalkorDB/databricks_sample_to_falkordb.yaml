@@ -1,0 +1,142 @@
+# Example config: load a Databricks commerce dataset into FalkorDB
+#
+# Usage (from Databricks-to-FalkorDB/databricks-to-falkordb):
+#   export DATABRICKS_TOKEN="..."
+#   cargo run --release -- --config ../databricks_sample_to_falkordb.yaml
+
+databricks:
+  # Replace with your workspace host (without protocol is fine).
+  host: "adb-1234567890123456.7.azuredatabricks.net"
+  # Replace with your SQL warehouse HTTP path.
+  http_path: "/sql/1.0/warehouses/your_warehouse_id"
+  # Supports $ENV_VAR resolution for this field.
+  access_token: "$DATABRICKS_TOKEN"
+  query_timeout_ms: 600000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "databricks_sample_graph"
+  max_unwind_batch_size: 1000
+  indexes:
+    - labels: ["Customer"]
+      property: "id"
+      source_table: "main.analytics.customers"
+      source_columns: ["customer_id"]
+    - labels: ["Product"]
+      property: "id"
+      source_table: "main.analytics.products"
+      source_columns: ["product_id"]
+    - labels: ["Order"]
+      property: "id"
+      source_table: "main.analytics.orders"
+      source_columns: ["order_id"]
+
+state:
+  backend: "file"
+  file_path: "databricks_sample_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "main.analytics.customers"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "id"
+    properties:
+      first_name: { column: "first_name" }
+      last_name: { column: "last_name" }
+      email: { column: "email" }
+      city: { column: "city" }
+
+  - type: node
+    name: products
+    source:
+      table: "main.analytics.products"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Product"]
+    key:
+      column: "product_id"
+      property: "id"
+    properties:
+      sku: { column: "sku" }
+      name: { column: "name" }
+      category: { column: "category" }
+      price: { column: "price" }
+
+  - type: node
+    name: orders
+    source:
+      table: "main.analytics.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Order"]
+    key:
+      column: "order_id"
+      property: "id"
+    properties:
+      status: { column: "status" }
+      ordered_at: { column: "ordered_at" }
+      total_amount: { column: "total_amount" }
+
+  - type: edge
+    name: customer_placed_order
+    source:
+      table: "main.analytics.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "id"
+    properties:
+      ordered_at: { column: "ordered_at" }
+
+  - type: edge
+    name: order_contains_product
+    source:
+      table: "main.analytics.order_items"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "CONTAINS"
+    direction: out
+    from:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "id"
+    to:
+      node_mapping: products
+      match_on:
+        - column: "product_id"
+          property: "id"
+    properties:
+      quantity: { column: "quantity" }
+      unit_price: { column: "unit_price" }
