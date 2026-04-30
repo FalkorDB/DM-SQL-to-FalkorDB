@@ -169,7 +169,7 @@ cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 
 ### PostgreSQL → FalkorDB
 
 - Location: `PostgreSQL-to-FalkorDB/`
-- What it does: Migrates and continuously syncs data from PostgreSQL into FalkorDB (supports full or incremental mode; optional daemon mode).
+- What it does: Migrates and continuously syncs data from PostgreSQL-compatible sources (including Supabase Postgres) into FalkorDB (supports full or incremental mode; optional daemon mode).
 - Scaffolding: supports schema introspection and template generation from PostgreSQL catalogs with qualified `schema.table` output and incremental delta detection including `last_update`.
 - Documentation: [PostgreSQL-to-FalkorDB/README.md](PostgreSQL-to-FalkorDB/README.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
@@ -186,6 +186,8 @@ cargo run --release -- --config example.config.yaml
 # Continuous sync
 cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 ```
+
+Supabase usage: provide the Supabase Postgres connection string via `POSTGRES_URL` with `sslmode=require` (or `sslmode=verify-full`).
 ---
 
 <a id="tool-snowflake"></a>

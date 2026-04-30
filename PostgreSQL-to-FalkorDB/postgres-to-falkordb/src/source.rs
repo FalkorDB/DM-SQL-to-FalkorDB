@@ -1,12 +1,25 @@
 use anyhow::{anyhow, Context, Result};
+use native_tls::TlsConnector;
+use postgres_native_tls::MakeTlsConnector;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use std::fs;
-use tokio_postgres::{Client, NoTls, Row};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_postgres::config::SslMode;
+use tokio_postgres::{Client, Connection, NoTls, Row};
 
 use crate::config::{CommonMappingFields, Config, Mode, PostgresConfig};
 
 /// Logical representation of a single row coming from PostgreSQL or a file source.
 pub type LogicalRow = JsonMap<String, JsonValue>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EffectiveSslMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
 
 /// Fetch rows for a given mapping, using either a local JSON file or PostgreSQL.
 ///
@@ -161,19 +174,51 @@ fn build_sql_for_mapping(mapping: &CommonMappingFields, watermark: Option<&str>)
 }
 
 /// Connect to PostgreSQL using the provided configuration.
-async fn connect_postgres(cfg: &PostgresConfig) -> Result<Client> {
+pub(crate) async fn connect_postgres(cfg: &PostgresConfig) -> Result<Client> {
     let conn_str = build_conn_string(cfg)?;
+    let (pg_cfg, ssl_mode) = parse_pg_config_with_ssl_mode(&conn_str)?;
 
-    let (client, connection) = tokio_postgres::connect(&conn_str, NoTls)
-        .await
-        .with_context(|| "Failed to connect to PostgreSQL")?;
-
-    // Spawn the connection task to drive the connection in the background.
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!(error = %e, "PostgreSQL connection error");
+    let client = match ssl_mode {
+        EffectiveSslMode::Disable => {
+            let (client, connection) = pg_cfg
+                .connect(NoTls)
+                .await
+                .with_context(|| "Failed to connect to PostgreSQL without TLS")?;
+            spawn_connection(connection);
+            client
         }
-    });
+        EffectiveSslMode::Prefer => {
+            let tls_connector = build_tls_connector(ssl_mode)?;
+            match pg_cfg.connect(tls_connector).await {
+                Ok((client, connection)) => {
+                    spawn_connection(connection);
+                    client
+                }
+                Err(tls_err) => {
+                    tracing::warn!(
+                        error = %tls_err,
+                        "TLS connection failed with sslmode=prefer; retrying without TLS"
+                    );
+                    let (client, connection) = pg_cfg.connect(NoTls).await.with_context(|| {
+                        "Failed to connect to PostgreSQL without TLS after TLS fallback"
+                    })?;
+                    spawn_connection(connection);
+                    client
+                }
+            }
+        }
+        EffectiveSslMode::Require | EffectiveSslMode::VerifyCa | EffectiveSslMode::VerifyFull => {
+            let tls_connector = build_tls_connector(ssl_mode)?;
+            let (client, connection) = pg_cfg.connect(tls_connector).await.with_context(|| {
+                format!(
+                    "Failed to connect to PostgreSQL using TLS (sslmode={})",
+                    ssl_mode_label(ssl_mode)
+                )
+            })?;
+            spawn_connection(connection);
+            client
+        }
+    };
 
     // If a per-query timeout is configured, apply it via statement_timeout.
     if let Some(ms) = cfg.query_timeout_ms {
@@ -185,6 +230,117 @@ async fn connect_postgres(cfg: &PostgresConfig) -> Result<Client> {
     }
 
     Ok(client)
+}
+
+fn parse_pg_config_with_ssl_mode(
+    conn_str: &str,
+) -> Result<(tokio_postgres::Config, EffectiveSslMode)> {
+    let (normalized_conn_str, override_mode) = normalize_sslmode_for_tokio(conn_str);
+    let pg_cfg: tokio_postgres::Config = normalized_conn_str
+        .parse()
+        .with_context(|| "Failed to parse PostgreSQL connection configuration")?;
+    let mode = override_mode.unwrap_or_else(|| match pg_cfg.get_ssl_mode() {
+        SslMode::Disable => EffectiveSslMode::Disable,
+        SslMode::Prefer => EffectiveSslMode::Prefer,
+        SslMode::Require => EffectiveSslMode::Require,
+        _ => EffectiveSslMode::Require,
+    });
+    Ok((pg_cfg, mode))
+}
+
+fn ssl_mode_label(mode: EffectiveSslMode) -> &'static str {
+    match mode {
+        EffectiveSslMode::Disable => "disable",
+        EffectiveSslMode::Prefer => "prefer",
+        EffectiveSslMode::Require => "require",
+        EffectiveSslMode::VerifyCa => "verify-ca",
+        EffectiveSslMode::VerifyFull => "verify-full",
+    }
+}
+
+fn build_tls_connector(mode: EffectiveSslMode) -> Result<MakeTlsConnector> {
+    let mut builder = TlsConnector::builder();
+    match mode {
+        // libpq semantics:
+        // - require: encrypted transport, certificate/hostname verification optional.
+        // - prefer: attempts TLS first with same relaxed verification, then can fall back.
+        EffectiveSslMode::Prefer | EffectiveSslMode::Require => {
+            builder.danger_accept_invalid_certs(true);
+            builder.danger_accept_invalid_hostnames(true);
+        }
+        // verify-ca: verify CA chain, skip hostname verification.
+        EffectiveSslMode::VerifyCa => {
+            builder.danger_accept_invalid_hostnames(true);
+        }
+        // verify-full: strict cert + hostname verification.
+        EffectiveSslMode::VerifyFull => {}
+        EffectiveSslMode::Disable => {
+            return Err(anyhow!("Cannot build TLS connector when sslmode=disable"));
+        }
+    }
+    let connector = builder
+        .build()
+        .with_context(|| "Failed to create native TLS connector for PostgreSQL")?;
+    Ok(MakeTlsConnector::new(connector))
+}
+
+fn is_sslmode_boundary_byte(b: u8) -> bool {
+    matches!(b, b'?' | b'&' | b' ' | b'\t' | b'\n' | b'\r')
+}
+
+fn normalize_sslmode_for_tokio(conn_str: &str) -> (String, Option<EffectiveSslMode>) {
+    let lower = conn_str.to_ascii_lowercase();
+    let lower_bytes = lower.as_bytes();
+
+    let mut search_start = 0usize;
+    while search_start < lower_bytes.len() {
+        let Some(found_at) = lower[search_start..].find("sslmode=") else {
+            break;
+        };
+        let key_start = search_start + found_at;
+        if key_start > 0 && !is_sslmode_boundary_byte(lower_bytes[key_start - 1]) {
+            search_start = key_start + "sslmode=".len();
+            continue;
+        }
+
+        let value_start = key_start + "sslmode=".len();
+        let mut value_end = value_start;
+        while value_end < lower_bytes.len() && !is_sslmode_boundary_byte(lower_bytes[value_end]) {
+            value_end += 1;
+        }
+        let value = &lower[value_start..value_end];
+        let override_mode = match value {
+            "verify-ca" => Some(EffectiveSslMode::VerifyCa),
+            "verify-full" => Some(EffectiveSslMode::VerifyFull),
+            _ => None,
+        };
+
+        if let Some(mode) = override_mode {
+            let mut normalized = String::with_capacity(
+                conn_str.len() - (value_end.saturating_sub(value_start)) + "require".len(),
+            );
+            normalized.push_str(&conn_str[..value_start]);
+            normalized.push_str("require");
+            normalized.push_str(&conn_str[value_end..]);
+            return (normalized, Some(mode));
+        }
+
+        search_start = value_end;
+    }
+
+    (conn_str.to_string(), None)
+}
+
+fn spawn_connection<S, T>(connection: Connection<S, T>)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::error!(error = %e, "PostgreSQL connection error");
+        }
+    });
 }
 
 fn build_conn_string(cfg: &PostgresConfig) -> Result<String> {
@@ -288,6 +444,32 @@ mod tests {
         assert!(sql.contains("public.customers"));
         assert!(sql.contains("active = true"));
         assert!(sql.contains("updated_at >"));
+    }
+
+    #[test]
+    fn normalize_sslmode_rewrites_verify_full_url_param() {
+        let input = "postgresql://user:pass@db.example.com:5432/postgres?sslmode=verify-full";
+        let (normalized, mode) = normalize_sslmode_for_tokio(input);
+        assert_eq!(mode, Some(EffectiveSslMode::VerifyFull));
+        assert!(normalized.contains("sslmode=require"));
+    }
+
+    #[test]
+    fn normalize_sslmode_rewrites_verify_ca_kv_param() {
+        let input = "host=db.example.com port=5432 user=postgres dbname=postgres sslmode=verify-ca";
+        let (normalized, mode) = normalize_sslmode_for_tokio(input);
+        assert_eq!(mode, Some(EffectiveSslMode::VerifyCa));
+        assert!(normalized.contains("sslmode=require"));
+    }
+
+    #[test]
+    fn parse_pg_config_preserves_prefer_when_no_override() {
+        let (pg_cfg, mode) = parse_pg_config_with_ssl_mode(
+            "host=localhost port=5432 user=postgres dbname=postgres sslmode=prefer",
+        )
+        .expect("config should parse");
+        assert_eq!(pg_cfg.get_ssl_mode(), SslMode::Prefer);
+        assert_eq!(mode, EffectiveSslMode::Prefer);
     }
 
     /// Optional PostgreSQL connectivity smoke test.
