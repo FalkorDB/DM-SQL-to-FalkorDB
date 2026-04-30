@@ -1,7 +1,7 @@
 {
   "id": "postgres",
   "displayName": "PostgreSQL → FalkorDB",
-  "description": "Migrate and continuously sync structured data from PostgreSQL into FalkorDB using declarative mappings.",
+  "description": "Migrate and continuously sync structured data from PostgreSQL-compatible sources (including Supabase Postgres) into FalkorDB using declarative mappings.",
   "workingDir": "PostgreSQL-to-FalkorDB/postgres-to-falkordb",
   "executable": {
     "type": "cargo",

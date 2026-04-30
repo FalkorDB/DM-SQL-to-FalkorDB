@@ -1,6 +1,6 @@
 # PostgreSQL-to-FalkorDB Loader
 
-Rust-based CLI tool to migrate and continuously sync structured data from PostgreSQL into a FalkorDB graph, using a declarative mapping.
+Rust-based CLI tool to migrate and continuously sync structured data from PostgreSQL-compatible sources (including Supabase Postgres) into a FalkorDB graph, using a declarative mapping.
 
 The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB loaders: you describe how PostgreSQL tables map to graph nodes and edges in a JSON/YAML config, and the tool handles batching, UNWIND+MERGE upserts, optional soft deletes, and incremental updates based on a watermark column.
 
@@ -8,6 +8,7 @@ The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB
 
 - **PostgreSQL source**
   - Connects to PostgreSQL using `tokio-postgres`.
+  - Supports TLS connection modes required by hosted PostgreSQL providers such as Supabase (`require`, `verify-ca`, `verify-full`).
   - Supports `table` + optional `where` or full custom `select` queries per mapping.
   - Optional paging via `fetch_batch_size` for large incremental loads.
 - **Schema scaffolding**
@@ -58,7 +59,7 @@ postgres:
   # user: "loader"
   # password: "$POSTGRES_PASSWORD"
   # dbname: "source_db"
-  # sslmode: "prefer"
+  # sslmode: "require"          # supports disable/prefer/require/verify-ca/verify-full
   fetch_batch_size: 10000       # optional; enables paged SELECTs for incremental loads
   query_timeout_ms: 60000       # optional; sets statement_timeout per session
 
@@ -141,11 +142,27 @@ Key points:
   `AND <updated_at_column> > '<last_watermark>'` for incremental mappings.
 - If `source.select` is used, the query is taken as-is or wrapped as a subquery when a watermark predicate is needed.
 - `fetch_batch_size` + `delta` on a table mapping cause the tool to page results with `ORDER BY <updated_at_column> LIMIT <batch> OFFSET <n>`.
+- TLS mode can be controlled through `postgres.sslmode` (or URL query `sslmode`), including `verify-ca` and `verify-full`.
 
 Watermarks per mapping are stored in the `state` backend, keyed by mapping name.
 
 - If `delta.initial_full_load` is **unset** or `true` for an incremental mapping and no watermark exists, the first run does a full load.
 - If `delta.initial_full_load: false` and no watermark exists, the first run *skips* that mapping and seeds its watermark to "now", so subsequent runs only see new changes.
+
+### Supabase compatibility
+
+The connector supports Supabase Postgres connection strings directly (including direct DB endpoints and Supavisor session pooler endpoints), because Supabase exposes a PostgreSQL-compatible wire protocol.
+
+Recommended settings:
+
+- Add `sslmode=require` (minimum) or `sslmode=verify-full` (recommended) to the connection string.
+- For daemon workloads, prefer direct or session-pooler endpoints.
+
+Example:
+
+```bash
+export POSTGRES_URL="postgresql://postgres.<project_ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require"
+```
 
 ## Example: Pagila sample – from rows to graph
 
