@@ -34,7 +34,7 @@ It includes a control plane web tool to configure, initiate and track data migra
 
 Tool list view in the Control Plane
 
-<img width="1151" height="759" alt="dm-sql-9-tools" src="https://github.com/user-attachments/assets/437a46f6-f0aa-4d91-a6b3-a69e634685bb" />
+<img width="1158" height="777" alt="dm-tools-with-supabase" src="https://github.com/user-attachments/assets/b98b2150-76de-4632-a501-8361356c8e61" />
 
 
 
