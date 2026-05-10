@@ -1,0 +1,6 @@
+**/target/debug
+**/target/debug/**
+.cargo-target-shared/debug
+.cargo-target-shared/debug/**
+.cargo-target-shared/
+.cargo/

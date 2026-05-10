@@ -12,3 +12,5 @@ control-plane/data/
 
 # Logs
 *.log
+.cargo-target-shared/
+.cargo/
