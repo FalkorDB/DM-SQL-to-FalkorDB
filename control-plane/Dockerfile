@@ -7,7 +7,7 @@ RUN npm ci
 COPY control-plane/ui/ ./
 RUN npm run build
 
-FROM rust:1.87-bookworm AS server-build
+FROM rust:1.88-bookworm AS server-build
 WORKDIR /src
 COPY . ./
 RUN cargo build --manifest-path control-plane/server/Cargo.toml --release
