@@ -98,12 +98,14 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let default_repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .context("failed to resolve default repo root")?;
-
-    let repo_root = cli.repo_root.unwrap_or(default_repo_root);
+    let repo_root = if let Some(repo_root) = cli.repo_root {
+        repo_root
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .context("failed to resolve default repo root")?
+    };
 
     let data_dir = cli
         .data_dir
