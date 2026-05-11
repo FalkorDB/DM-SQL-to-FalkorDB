@@ -1,17 +1,20 @@
 use std::collections::HashMap;
+use std::process::{Output, Stdio};
 
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::Json;
+use serde_json::json;
 use serde_yaml::Value as YamlValue;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::models::{bad_request, not_found};
 use crate::models::{
-    ApiResult, AppState, CanvasData, CanvasLink, CanvasNode, GenerateScaffoldTemplateRequest,
-    GenerateScaffoldTemplateResponse, GenerateSchemaGraphPreviewRequest,
-    GenerateSchemaGraphPreviewResponse, SchemaGraphPreviewSource,
+    ApiResult, AppState, CanvasData, CanvasLink, CanvasNode, ExecutionBackend,
+    GenerateScaffoldTemplateRequest, GenerateScaffoldTemplateResponse,
+    GenerateSchemaGraphPreviewRequest, GenerateSchemaGraphPreviewResponse, SchemaGraphPreviewSource,
 };
 use crate::tools::Tool;
 
@@ -191,6 +194,22 @@ async fn run_scaffold_generation(
     config_content: &str,
     include_schema: bool,
 ) -> ApiResult<GenerateScaffoldTemplateResponse> {
+    match &state.execution.backend {
+        ExecutionBackend::Local => {
+            run_scaffold_generation_local(state, tool, config_content, include_schema).await
+        }
+        ExecutionBackend::Kubernetes => {
+            run_scaffold_generation_kubernetes(state, tool, config_content, include_schema).await
+        }
+    }
+}
+
+async fn run_scaffold_generation_local(
+    state: &AppState,
+    tool: &Tool,
+    config_content: &str,
+    include_schema: bool,
+) -> ApiResult<GenerateScaffoldTemplateResponse> {
     let ext = if serde_json::from_str::<serde_json::Value>(config_content).is_ok() {
         "json"
     } else {
@@ -254,6 +273,428 @@ async fn run_scaffold_generation(
         template_yaml,
         schema_summary,
     })
+}
+
+async fn run_scaffold_generation_kubernetes(
+    state: &AppState,
+    tool: &Tool,
+    config_content: &str,
+    include_schema: bool,
+) -> ApiResult<GenerateScaffoldTemplateResponse> {
+    let ext = if serde_json::from_str::<serde_json::Value>(config_content).is_ok() {
+        "json"
+    } else {
+        "yaml"
+    };
+
+    let run_token = Uuid::new_v4().simple().to_string();
+    let job_name = format!("dm-scaffold-{run_token}");
+    let config_map_name = format!("{job_name}-cfg");
+
+    let binary_name = tool
+        .runner_binary_name(&state.repo_root)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let binary_path = format!(
+        "{}/{}",
+        state.execution.kubernetes.binary_dir.trim_end_matches('/'),
+        binary_name
+    );
+    let runtime_config_path = format!("/run-config/config.{ext}");
+    let mut tool_args = vec!["--config".to_string(), runtime_config_path];
+    if include_schema {
+        tool_args.push("--introspect-schema".to_string());
+    }
+    tool_args.push("--generate-template".to_string());
+
+    let config_manifest = build_scaffold_config_map_manifest(
+        &state.execution.kubernetes.namespace,
+        &config_map_name,
+        &run_token,
+        config_content,
+        ext,
+    );
+    kubectl_apply_manifest_json(&state.execution.kubernetes.kubectl_bin, &config_manifest)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to create scaffold config map: {e}"),
+            )
+        })?;
+
+    let job_manifest = build_scaffold_job_manifest(
+        state,
+        &job_name,
+        &config_map_name,
+        &run_token,
+        &binary_path,
+        tool_args,
+    );
+    if let Err(err) =
+        kubectl_apply_manifest_json(&state.execution.kubernetes.kubectl_bin, &job_manifest).await
+    {
+        let _ = cleanup_scaffold_kubernetes_resources(state, &job_name, &config_map_name).await;
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to create scaffold job: {err}"),
+        ));
+    }
+
+    let wait_result =
+        kubectl_wait_for_job_completion(&state.execution.kubernetes.kubectl_bin, &state.execution.kubernetes.namespace, &job_name, 180)
+            .await;
+    let logs = kubectl_get_job_logs(
+        &state.execution.kubernetes.kubectl_bin,
+        &state.execution.kubernetes.namespace,
+        &job_name,
+    )
+    .await
+    .unwrap_or_default();
+
+    let _ = cleanup_scaffold_kubernetes_resources(state, &job_name, &config_map_name).await;
+
+    if let Err(wait_err) = wait_result {
+        let summary = summarize_scaffold_failure(&logs, &logs);
+        let detail = if summary == "scaffold command failed" {
+            wait_err
+        } else {
+            summary
+        };
+        return bad_request(format!("scaffold generation failed: {detail}"));
+    }
+
+    let (schema_summary, template_yaml) = split_scaffold_output(&logs, include_schema);
+    if template_yaml.trim().is_empty() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "scaffold command did not return template output".to_string(),
+        ));
+    }
+
+    Ok(GenerateScaffoldTemplateResponse {
+        template_yaml,
+        schema_summary,
+    })
+}
+
+fn build_scaffold_config_map_manifest(
+    namespace: &str,
+    config_map_name: &str,
+    run_token: &str,
+    config_content: &str,
+    config_ext: &str,
+) -> serde_json::Value {
+    let data_key = format!("config.{config_ext}");
+    json!({
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": config_map_name,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": "falkordb-migrate-scaffold",
+                "dm.falkordb/scaffold-id": run_token,
+            },
+        },
+        "data": {
+            data_key: config_content
+        }
+    })
+}
+
+fn build_scaffold_job_manifest(
+    state: &AppState,
+    job_name: &str,
+    config_map_name: &str,
+    run_token: &str,
+    binary_path: &str,
+    tool_args: Vec<String>,
+) -> serde_json::Value {
+    let mut volumes = vec![json!({
+        "name": "run-config",
+        "configMap": {
+            "name": config_map_name
+        }
+    })];
+    let mut volume_mounts = vec![json!({
+        "name": "run-config",
+        "mountPath": "/run-config",
+        "readOnly": true
+    })];
+
+    if let Some(shared_pvc_name) = &state.execution.kubernetes.shared_pvc_name {
+        volumes.push(json!({
+            "name": "workspace",
+            "persistentVolumeClaim": {
+                "claimName": shared_pvc_name
+            }
+        }));
+        volume_mounts.push(json!({
+            "name": "workspace",
+            "mountPath": "/workspace"
+        }));
+    }
+
+    let mut env_from = Vec::new();
+    if let Some(secret_name) = &state.execution.kubernetes.env_secret_name {
+        env_from.push(json!({
+            "secretRef": {
+                "name": secret_name
+            }
+        }));
+    }
+    if let Some(configmap_name) = &state.execution.kubernetes.env_configmap_name {
+        env_from.push(json!({
+            "configMapRef": {
+                "name": configmap_name
+            }
+        }));
+    }
+
+    let labels = json!({
+        "app.kubernetes.io/name": "falkordb-migrate-scaffold",
+        "dm.falkordb/scaffold-id": run_token,
+    });
+
+    let mut pod_spec = json!({
+        "restartPolicy": "Never",
+        "containers": [{
+            "name": "scaffold",
+            "image": state.execution.kubernetes.runner_image,
+            "imagePullPolicy": state.execution.kubernetes.image_pull_policy,
+            "command": [binary_path],
+            "args": tool_args,
+            "volumeMounts": volume_mounts,
+        }],
+        "volumes": volumes,
+    });
+
+    if let Some(service_account) = &state.execution.kubernetes.service_account {
+        if let Some(spec) = pod_spec.as_object_mut() {
+            spec.insert(
+                "serviceAccountName".to_string(),
+                serde_json::Value::String(service_account.clone()),
+            );
+        }
+    }
+
+    if !env_from.is_empty() {
+        if let Some(containers) = pod_spec
+            .get_mut("containers")
+            .and_then(|v| v.as_array_mut())
+        {
+            if let Some(container) = containers.first_mut().and_then(|v| v.as_object_mut()) {
+                container.insert("envFrom".to_string(), serde_json::Value::Array(env_from));
+            }
+        }
+    }
+
+    json!({
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": job_name,
+            "namespace": state.execution.kubernetes.namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 30,
+            "template": {
+                "metadata": {
+                    "labels": labels,
+                },
+                "spec": pod_spec,
+            }
+        }
+    })
+}
+
+async fn cleanup_scaffold_kubernetes_resources(
+    state: &AppState,
+    job_name: &str,
+    config_map_name: &str,
+) -> Result<(), String> {
+    let _ = kubectl_delete_resource(
+        &state.execution.kubernetes.kubectl_bin,
+        &state.execution.kubernetes.namespace,
+        "job",
+        job_name,
+    )
+    .await;
+    let _ = kubectl_delete_resource(
+        &state.execution.kubernetes.kubectl_bin,
+        &state.execution.kubernetes.namespace,
+        "configmap",
+        config_map_name,
+    )
+    .await;
+    Ok(())
+}
+
+async fn kubectl_apply_manifest_json(
+    kubectl_bin: &str,
+    manifest: &serde_json::Value,
+) -> Result<(), String> {
+    let args = vec!["apply".to_string(), "-f".to_string(), "-".to_string()];
+    let payload =
+        serde_json::to_string_pretty(manifest).map_err(|e| format!("serialize manifest: {e}"))?;
+    let output = run_kubectl_raw(kubectl_bin, &args, Some(&payload)).await?;
+    if !output.status.success() {
+        return Err(format!(
+            "kubectl apply failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+async fn kubectl_delete_resource(
+    kubectl_bin: &str,
+    namespace: &str,
+    kind: &str,
+    name: &str,
+) -> Result<(), String> {
+    let args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "delete".to_string(),
+        format!("{kind}/{name}"),
+        "--ignore-not-found=true".to_string(),
+    ];
+    let output = run_kubectl_raw(kubectl_bin, &args, None).await?;
+    if !output.status.success() {
+        return Err(format!(
+            "kubectl delete failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+async fn kubectl_wait_for_job_completion(
+    kubectl_bin: &str,
+    namespace: &str,
+    job_name: &str,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "wait".to_string(),
+        "--for=condition=complete".to_string(),
+        format!("job/{job_name}"),
+        format!("--timeout={}s", timeout_secs),
+    ];
+
+    let output = run_kubectl_raw(kubectl_bin, &args, None).await?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if let Some(reason) = kubectl_get_job_failure_reason(kubectl_bin, namespace, job_name).await {
+        return Err(reason);
+    }
+
+    if stderr.is_empty() {
+        Err("scaffold job failed to complete".to_string())
+    } else {
+        Err(stderr)
+    }
+}
+
+async fn kubectl_get_job_failure_reason(
+    kubectl_bin: &str,
+    namespace: &str,
+    job_name: &str,
+) -> Option<String> {
+    let args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "get".to_string(),
+        "job".to_string(),
+        job_name.to_string(),
+        "-o".to_string(),
+        "json".to_string(),
+    ];
+    let output = run_kubectl_raw(kubectl_bin, &args, None).await.ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let conditions = value
+        .get("status")
+        .and_then(|s| s.get("conditions"))
+        .and_then(|c| c.as_array())?;
+
+    for condition in conditions {
+        let kind = condition.get("type").and_then(|v| v.as_str())?;
+        let status = condition.get("status").and_then(|v| v.as_str())?;
+        if kind.eq_ignore_ascii_case("failed") && status.eq_ignore_ascii_case("true") {
+            if let Some(message) = condition.get("message").and_then(|v| v.as_str()) {
+                return Some(message.to_string());
+            }
+            if let Some(reason) = condition.get("reason").and_then(|v| v.as_str()) {
+                return Some(reason.to_string());
+            }
+        }
+    }
+    None
+}
+
+async fn kubectl_get_job_logs(
+    kubectl_bin: &str,
+    namespace: &str,
+    job_name: &str,
+) -> Result<String, String> {
+    let args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "logs".to_string(),
+        format!("job/{job_name}"),
+        "--all-containers=true".to_string(),
+    ];
+    let output = run_kubectl_raw(kubectl_bin, &args, None).await?;
+    if !output.status.success() {
+        return Err(format!(
+            "kubectl logs failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+async fn run_kubectl_raw(
+    kubectl_bin: &str,
+    args: &[String],
+    stdin_payload: Option<&str>,
+) -> Result<Output, String> {
+    let mut cmd = Command::new(kubectl_bin);
+    cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    if stdin_payload.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn kubectl: {e}"))?;
+
+    if let Some(payload) = stdin_payload {
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(payload.as_bytes())
+                .await
+                .map_err(|e| format!("failed writing kubectl stdin payload: {e}"))?;
+        }
+    }
+
+    child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("failed waiting for kubectl: {e}"))
 }
 
 fn split_scaffold_output(stdout: &str, include_schema: bool) -> (Option<String>, String) {
