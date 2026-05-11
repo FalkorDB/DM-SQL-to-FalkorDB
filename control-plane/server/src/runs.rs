@@ -538,7 +538,7 @@ fn build_kubernetes_runtime(
     let run_token = run_id.simple().to_string();
     let workload_name = format!("dm-run-{run_token}");
     let config_map_name = format!("{workload_name}-cfg");
-    let pod_label_selector = format!("dm-falkordb-run-id={run_token}");
+    let pod_label_selector = format!("dm.falkordb/run-id={run_token}");
     let binary_name = tool.runner_binary_name(&state.repo_root)?;
     let binary_path = format!(
         "{}/{}",
@@ -879,6 +879,9 @@ fn spawn_log_reader<R>(
     tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            if should_skip_log_line(stream_name, &line) {
+                continue;
+            }
             let evt = RunEvent::Log {
                 stream: stream_name.to_string(),
                 line: line.clone(),
@@ -890,6 +893,16 @@ fn spawn_log_reader<R>(
 
         tracing::info!(run_id = %run_id, stream = %stream_name, "log stream ended");
     });
+}
+
+fn should_skip_log_line(stream_name: &str, line: &str) -> bool {
+    if stream_name != "stderr" {
+        return false;
+    }
+
+    let line = line.trim();
+    line.contains("Error from server (BadRequest): container \"runner\" in pod")
+        && line.contains("is waiting to start: ContainerCreating")
 }
 
 fn spawn_kubernetes_log_reader(
@@ -1300,7 +1313,7 @@ fn maybe_rewrite_state_file_path_for_kubernetes(
         if backend == "file" {
             state.insert(
                 "file_path".to_string(),
-                serde_json::Value::String(format!("/workspace/state/{config_id}.json")),
+                serde_json::Value::String(format!("/workspace/{config_id}.json")),
             );
         }
     }
@@ -1524,7 +1537,7 @@ mod tests {
             .await
             .expect("materialized config should exist");
         assert!(
-            cfg_raw.contains("/workspace/state/"),
+            cfg_raw.contains(&format!("/workspace/{}.json", ctx.config_id)),
             "expected state.file_path rewrite for shared pvc"
         );
 
