@@ -92,6 +92,10 @@ spec:
           volumeMounts:
             - name: control-plane-data
               mountPath: /var/lib/falkordb-control-plane
+            {{- if .Values.kubernetesRunner.sharedPvc.enabled }}
+            - name: runner-shared
+              mountPath: {{ .Values.kubernetesRunner.sharedPvc.mountPath }}
+            {{- end }}
       volumes:
         - name: control-plane-data
           {{- if .Values.persistence.enabled }}
@@ -100,6 +104,11 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.kubernetesRunner.sharedPvc.enabled }}
+        - name: runner-shared
+          persistentVolumeClaim:
+            claimName: {{ include "dm-sql-to-falkordb.runnerSharedPvcName" . }}
+        {{- end }}
       {{- with .Values.controlPlane.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

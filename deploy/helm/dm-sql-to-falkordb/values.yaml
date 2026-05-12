@@ -69,6 +69,7 @@ kubernetesRunner:
   binaryDir: /opt/falkordb/bin
   sharedPvc:
     enabled: true
+    mountPath: /workspace
     existingClaim: ""
     storageClassName: ""
     accessModes:

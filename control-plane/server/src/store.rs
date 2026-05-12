@@ -520,13 +520,19 @@ pub async fn get_config_state(
         return Ok(Json(out));
     }
 
-    let file_path = state_section
+    let configured_file_path = state_section
         .and_then(|s| s.get("file_path"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| "state.json".to_string());
+    let file_path = effective_state_file_path(&state, cfg.id, &configured_file_path);
 
     out.file_path = Some(file_path.clone());
+    if file_path != configured_file_path {
+        out.warning = Some(format!(
+            "state file path rewritten for kubernetes shared PVC: {file_path}"
+        ));
+    }
 
     let cwd = tool.working_dir_abs(&state.repo_root);
     let resolved = resolve_path(&cwd, &file_path);
@@ -549,8 +555,12 @@ pub async fn get_config_state(
         .await
         .unwrap_or_else(|_| state.data_dir.clone());
 
+    let allow_workspace_shared = uses_kubernetes_shared_state_path(&state);
     if let Some(canon) = &resolved_canon {
-        if !canon.starts_with(&repo_root_canon) && !canon.starts_with(&data_dir_canon) {
+        if !canon.starts_with(&repo_root_canon)
+            && !canon.starts_with(&data_dir_canon)
+            && !(allow_workspace_shared && canon.starts_with(Path::new("/workspace")))
+        {
             out.warning = Some(
                 "state file is outside control-plane repo_root/data_dir; skipping watermark read"
                     .to_string(),
@@ -626,13 +636,22 @@ pub async fn clear_config_state(
         return bad_request("config state backend is not 'file'".to_string());
     }
 
-    let file_path = state_section
+    let configured_file_path = state_section
         .and_then(|s| s.get("file_path"))
         .and_then(|v| v.as_str())
-        .unwrap_or("state.json");
+        .unwrap_or("state.json")
+        .to_string();
+    let file_path = effective_state_file_path(&state, cfg.id, &configured_file_path);
+
+    if uses_kubernetes_shared_state_path(&state) && !Path::new("/workspace").is_dir() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "shared runner workspace mount '/workspace' is unavailable".to_string(),
+        ));
+    }
 
     let cwd = tool.working_dir_abs(&state.repo_root);
-    let resolved = resolve_path(&cwd, file_path);
+    let resolved = resolve_path(&cwd, &file_path);
 
     // Safety: Only delete state files within repo_root or data_dir.
     let resolved_canon = tokio::fs::canonicalize(&resolved).await.ok();
@@ -643,8 +662,12 @@ pub async fn clear_config_state(
         .await
         .unwrap_or_else(|_| state.data_dir.clone());
 
+    let allow_workspace_shared = uses_kubernetes_shared_state_path(&state);
     if let Some(canon) = &resolved_canon {
-        if !canon.starts_with(&repo_root_canon) && !canon.starts_with(&data_dir_canon) {
+        if !canon.starts_with(&repo_root_canon)
+            && !canon.starts_with(&data_dir_canon)
+            && !(allow_workspace_shared && canon.starts_with(Path::new("/workspace")))
+        {
             return bad_request(
                 "refusing to delete state file outside control-plane repo_root/data_dir"
                     .to_string(),
@@ -676,4 +699,19 @@ fn resolve_path(base: &Path, raw: &str) -> PathBuf {
         return p.to_path_buf();
     }
     base.join(p)
+}
+
+fn uses_kubernetes_shared_state_path(state: &AppState) -> bool {
+    matches!(
+        state.execution.backend,
+        crate::models::ExecutionBackend::Kubernetes
+    ) && state.execution.kubernetes.shared_pvc_name.is_some()
+}
+
+fn effective_state_file_path(state: &AppState, config_id: Uuid, configured_file_path: &str) -> String {
+    if uses_kubernetes_shared_state_path(state) {
+        format!("/workspace/{config_id}.json")
+    } else {
+        configured_file_path.to_string()
+    }
 }
