@@ -99,7 +99,7 @@ impl DatabricksClient {
         }
 
         let cols = v
-            .pointer("/result/manifest/schema/columns")
+            .pointer("/manifest/schema/columns")
             .and_then(|c| c.as_array())
             .ok_or_else(|| {
                 anyhow!("Missing result.manifest.schema.columns in Databricks response")
