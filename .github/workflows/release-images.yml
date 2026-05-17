@@ -1,0 +1,167 @@
+name: Release to DockerHub / GHCR
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Version tag override (e.g. v0.1.0). Leave empty to use pushed tag or edge.'
+        required: false
+        default: ''
+
+  push:
+    tags: ["v*.*.*"]
+    branches:
+      - main
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      runner_tags: ${{ steps.vars.outputs.runner_tags }}
+      control_plane_tags: ${{ steps.vars.outputs.control_plane_tags }}
+    steps:
+      - name: Set up variables
+        id: vars
+        run: |
+          VERSION="${{ github.event.inputs.version_override }}"
+          
+          if [[ -z "$VERSION" ]]; then
+            if [[ "${{ github.event_name }}" == "push" ]] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              VERSION="${{ github.ref_name }}"
+            else
+              VERSION="edge"
+            fi
+          fi
+          
+          if [[ "$VERSION" == "edge" ]]; then
+            echo "runner_tags=falkordb/dm-sql-to-falkordb-runner:edge,ghcr.io/falkordb/dm-sql-to-falkordb-runner:edge" >> $GITHUB_OUTPUT
+            echo "control_plane_tags=falkordb/dm-sql-to-falkordb-control-plane:edge,ghcr.io/falkordb/dm-sql-to-falkordb-control-plane:edge" >> $GITHUB_OUTPUT
+          else
+            echo "runner_tags=falkordb/dm-sql-to-falkordb-runner:latest,falkordb/dm-sql-to-falkordb-runner:${VERSION},ghcr.io/falkordb/dm-sql-to-falkordb-runner:latest,ghcr.io/falkordb/dm-sql-to-falkordb-runner:${VERSION}" >> $GITHUB_OUTPUT
+            echo "control_plane_tags=falkordb/dm-sql-to-falkordb-control-plane:latest,falkordb/dm-sql-to-falkordb-control-plane:${VERSION},ghcr.io/falkordb/dm-sql-to-falkordb-control-plane:latest,ghcr.io/falkordb/dm-sql-to-falkordb-control-plane:${VERSION}" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push:
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      RUNNER_BASE_TAGS: ${{ needs.prepare.outputs.runner_tags }}
+      CONTROL_PLANE_BASE_TAGS: ${{ needs.prepare.outputs.control_plane_tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute arch tags
+        run: |
+          RUNNER_ARCH_TAGS=$(echo "$RUNNER_BASE_TAGS" | awk -v arch="${{ matrix.arch }}" -F',' '{for(i=1;i<=NF;i++){printf "%s-%s", $i, arch; if(i<NF) printf ","}}')
+          echo "RUNNER_ARCH_TAGS=$RUNNER_ARCH_TAGS" >> $GITHUB_ENV
+          
+          CP_ARCH_TAGS=$(echo "$CONTROL_PLANE_BASE_TAGS" | awk -v arch="${{ matrix.arch }}" -F',' '{for(i=1;i<=NF;i++){printf "%s-%s", $i, arch; if(i<NF) printf ","}}')
+          echo "CP_ARCH_TAGS=$CP_ARCH_TAGS" >> $GITHUB_ENV
+          
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            echo "TRIVY_RUNNER_TAG=$(echo "$RUNNER_BASE_TAGS" | cut -d',' -f1)-amd64" >> $GITHUB_ENV
+            echo "TRIVY_CP_TAG=$(echo "$CONTROL_PLANE_BASE_TAGS" | cut -d',' -f1)-amd64" >> $GITHUB_ENV
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push runner image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/runner.Dockerfile
+          push: true
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.RUNNER_ARCH_TAGS }}
+
+      - name: Build and push control-plane image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./control-plane/Dockerfile
+          push: true
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.CP_ARCH_TAGS }}
+
+      - name: Run Trivy scanner (runner)
+        if: matrix.arch == 'amd64'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.TRIVY_RUNNER_TAG }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
+          
+      - name: Run Trivy scanner (control-plane)
+        if: matrix.arch == 'amd64'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.TRIVY_CP_TAG }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
+
+  publish-manifest:
+    needs: [build-and-push, prepare]
+    runs-on: ubuntu-latest
+    env:
+      RUNNER_BASE_TAGS: ${{ needs.prepare.outputs.runner_tags }}
+      CONTROL_PLANE_BASE_TAGS: ${{ needs.prepare.outputs.control_plane_tags }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest lists
+        run: |
+          IFS=',' read -ra R_TAGS <<< "$RUNNER_BASE_TAGS"
+          for TAG in "${R_TAGS[@]}"; do
+            docker buildx imagetools create -t "$TAG" "${TAG}-amd64" "${TAG}-arm64"
+          done
+          
+          IFS=',' read -ra CP_TAGS <<< "$CONTROL_PLANE_BASE_TAGS"
+          for TAG in "${CP_TAGS[@]}"; do
+            docker buildx imagetools create -t "$TAG" "${TAG}-amd64" "${TAG}-arm64"
+          done
