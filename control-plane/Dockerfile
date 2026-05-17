@@ -16,7 +16,7 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-ARG KUBECTL_VERSION=v1.33.1
+ARG KUBECTL_VERSION=v1.36.1
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "${ARCH}" in \
       amd64) KARCH="amd64" ;; \
