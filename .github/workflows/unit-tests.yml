@@ -27,6 +27,18 @@ jobs:
           
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: | 
+            control-plane/server 
+            BigQuery-to-FalkorDB/bigquery-to-falkordb 
+            ClickHouse-to-FalkorDB 
+            Databricks-to-FalkorDB/databricks-to-falkordb 
+            MariaDB-to-FalkorDB 
+            MySQL-to-FalkorDB 
+            PostgreSQL-to-FalkorDB/postgres-to-falkordb 
+            SQLServer-to-FalkorDB 
+            Snowflake-to-FalkorDB 
+            Spark-to-FalkorDB/spark-to-falkordb
 
       - name: Format Check (control-plane)
         run: cargo fmt --manifest-path control-plane/server/Cargo.toml -- --check
