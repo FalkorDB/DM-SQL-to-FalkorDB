@@ -1,0 +1,46 @@
+name: Unit Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [published]
+
+jobs:
+  test:
+    name: Run tests on Ubuntu
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format Check (control-plane)
+        run: cargo fmt --manifest-path control-plane/server/Cargo.toml -- --check
+
+      - name: Test (control-plane)
+        run: cargo test --manifest-path control-plane/server/Cargo.toml --all-features
+
+      - name: Find and test all tool packages
+        run: |
+          set -e
+          find . -name "Cargo.toml" -not -path "*/target/*" -not -path "*/control-plane/*" | while read -r toml; do
+            echo "======================================"
+            echo "Formatting $toml"
+            cargo fmt --manifest-path "$toml" -- --check
+            echo "Testing $toml"
+            cargo test --manifest-path "$toml" --all-features
+          done
