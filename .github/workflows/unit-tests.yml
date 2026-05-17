@@ -49,7 +49,7 @@ jobs:
       - name: Find and test all tool packages
         run: |
           set -e
-          find . -name "Cargo.toml" -not -path "*/target/*" -not -path "*/control-plane/*" | while read -r toml; do
+          find . -name "Cargo.toml" -not -path "*/target/*" -not -path "*/control-plane/*" -not -path "*/third_party/*" | while read -r toml; do
             echo "======================================"
             echo "Formatting $toml"
             cargo fmt --manifest-path "$toml" -- --check
