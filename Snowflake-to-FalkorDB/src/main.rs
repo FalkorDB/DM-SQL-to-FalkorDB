@@ -48,7 +48,11 @@ struct Cli {
     interval_secs: u64,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(long, env = "SNOWFLAKE_TO_FALKORDB_METRICS_PORT", default_value_t = 9992)]
+    #[arg(
+        long,
+        env = "SNOWFLAKE_TO_FALKORDB_METRICS_PORT",
+        default_value_t = 9992
+    )]
     metrics_port: u16,
 
     /// Introspect source Snowflake schema and print a normalized summary.

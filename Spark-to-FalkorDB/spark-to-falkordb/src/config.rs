@@ -147,7 +147,13 @@ pub struct SourceConfig {
     #[serde(rename = "where")]
     pub r#where: Option<String>,
     /// Optional LIMIT cap for result cardinality (Neo4j Spark-like query-count control).
-    #[serde(default, alias = "query_count", alias = "queryCount", alias = "count", alias = "limit")]
+    #[serde(
+        default,
+        alias = "query_count",
+        alias = "queryCount",
+        alias = "count",
+        alias = "limit"
+    )]
     pub query_count: Option<u64>,
     /// Optional Spark partition/read hint controls.
     #[serde(default)]
@@ -417,9 +423,7 @@ fn validate_spark_config(spark: &SparkConfig) -> Result<()> {
     }
     if let Some(base_ms) = spark.retry_backoff_ms {
         if base_ms == 0 {
-            return Err(anyhow!(
-                "spark.retry_backoff_ms must be > 0 when provided"
-            ));
+            return Err(anyhow!("spark.retry_backoff_ms must be > 0 when provided"));
         }
     }
     if let Some(max_ms) = spark.retry_backoff_max_ms {
@@ -440,9 +444,7 @@ fn validate_spark_config(spark: &SparkConfig) -> Result<()> {
     }
     if let Some(depth) = spark.flatten_max_depth {
         if depth == 0 {
-            return Err(anyhow!(
-                "spark.flatten_max_depth must be > 0 when provided"
-            ));
+            return Err(anyhow!("spark.flatten_max_depth must be > 0 when provided"));
         }
     }
 
@@ -480,7 +482,11 @@ fn validate_common_mapping(common: &CommonMappingFields, has_spark: bool) -> Res
 }
 
 fn validate_source_config(mapping_name: &str, source: &SourceConfig) -> Result<()> {
-    let has_file = source.file.as_ref().map(|v| !v.trim().is_empty()).unwrap_or(false);
+    let has_file = source
+        .file
+        .as_ref()
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
     let has_table = source
         .table
         .as_ref()
@@ -746,7 +752,10 @@ mappings:
                 _ => None,
             })
             .expect("expected edge mapping");
-        assert_eq!(edge.common.source.select.as_deref(), Some("SELECT customer_id, order_id FROM default.orders"));
+        assert_eq!(
+            edge.common.source.select.as_deref(),
+            Some("SELECT customer_id, order_id FROM default.orders")
+        );
         assert_eq!(edge.from.match_on.len(), 1);
         assert_eq!(edge.from.match_on[0].column, "customer_id");
         assert_eq!(edge.from.match_on[0].property, "id");

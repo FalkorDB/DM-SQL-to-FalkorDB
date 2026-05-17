@@ -312,7 +312,11 @@ fn infer_nodes(schema: &SchemaMetadata) -> (Vec<InferredNode>, Vec<String>) {
     (nodes, notes)
 }
 
-fn build_template_config(cfg: &Config, schema: &SchemaMetadata, nodes: &[InferredNode]) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    schema: &SchemaMetadata,
+    nodes: &[InferredNode],
+) -> TemplateConfig {
     let spark_cfg = cfg.spark.as_ref();
     let mut mappings = Vec::new();
 

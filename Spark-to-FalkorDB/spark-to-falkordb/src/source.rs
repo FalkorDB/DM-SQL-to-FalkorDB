@@ -76,7 +76,11 @@ impl SparkClient {
         }
     }
 
-    async fn send_json_with_retry<F>(&self, operation: &str, mut build_request: F) -> Result<JsonValue>
+    async fn send_json_with_retry<F>(
+        &self,
+        operation: &str,
+        mut build_request: F,
+    ) -> Result<JsonValue>
     where
         F: FnMut() -> reqwest::RequestBuilder,
     {
@@ -393,7 +397,9 @@ fn parse_application_json(v: &JsonValue) -> Result<Vec<LogicalRow>> {
             }
             Ok(vec![row])
         }
-        _ => Err(anyhow!("Unsupported application/json payload for Spark statement")),
+        _ => Err(anyhow!(
+            "Unsupported application/json payload for Spark statement"
+        )),
     }
 }
 
@@ -618,7 +624,9 @@ fn build_source_predicates(
         predicates.push(w.clone());
     }
 
-    if let (Mode::Incremental, Some(delta), Some(wm)) = (mapping.mode, mapping.delta.as_ref(), watermark) {
+    if let (Mode::Incremental, Some(delta), Some(wm)) =
+        (mapping.mode, mapping.delta.as_ref(), watermark)
+    {
         let escaped = wm.replace('\'', "''");
         predicates.push(format!("{} > '{}'", delta.updated_at_column, escaped));
     }
@@ -709,9 +717,9 @@ fn is_complex_value(value: &JsonValue) -> bool {
 
 fn stringify_complex_value(value: JsonValue) -> JsonValue {
     match value {
-        JsonValue::Array(_) | JsonValue::Object(_) => JsonValue::String(
-            serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string()),
-        ),
+        JsonValue::Array(_) | JsonValue::Object(_) => {
+            JsonValue::String(serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string()))
+        }
         other => other,
     }
 }
@@ -929,7 +937,10 @@ mod tests {
         };
         let transformed = apply_schema_strategy(rows, &cfg, &source);
         let row = &transformed[0];
-        assert_eq!(row.get("profile_name_first"), Some(&serde_json::json!("Ada")));
+        assert_eq!(
+            row.get("profile_name_first"),
+            Some(&serde_json::json!("Ada"))
+        );
         assert_eq!(row.get("tags"), Some(&serde_json::json!("[\"vip\"]")));
     }
 
@@ -937,10 +948,22 @@ mod tests {
     fn retry_backoff_is_exponential_and_capped() {
         let base = Duration::from_millis(100);
         let max = Duration::from_millis(1_000);
-        assert_eq!(retry_delay_for_attempt(1, base, max), Duration::from_millis(100));
-        assert_eq!(retry_delay_for_attempt(2, base, max), Duration::from_millis(200));
-        assert_eq!(retry_delay_for_attempt(4, base, max), Duration::from_millis(800));
-        assert_eq!(retry_delay_for_attempt(5, base, max), Duration::from_millis(1_000));
+        assert_eq!(
+            retry_delay_for_attempt(1, base, max),
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            retry_delay_for_attempt(2, base, max),
+            Duration::from_millis(200)
+        );
+        assert_eq!(
+            retry_delay_for_attempt(4, base, max),
+            Duration::from_millis(800)
+        );
+        assert_eq!(
+            retry_delay_for_attempt(5, base, max),
+            Duration::from_millis(1_000)
+        );
         assert_eq!(
             retry_delay_for_attempt(10, base, max),
             Duration::from_millis(1_000)
@@ -952,7 +975,10 @@ mod tests {
         assert!(should_retry_http_status(StatusCode::TOO_MANY_REQUESTS));
         assert!(should_retry_http_status(StatusCode::SERVICE_UNAVAILABLE));
         assert!(!should_retry_http_status(StatusCode::BAD_REQUEST));
-        assert_eq!(classify_http_status(StatusCode::UNAUTHORIZED), "authentication");
+        assert_eq!(
+            classify_http_status(StatusCode::UNAUTHORIZED),
+            "authentication"
+        );
     }
 
     /// Optional Spark connectivity smoke test.

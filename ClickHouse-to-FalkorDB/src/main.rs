@@ -47,7 +47,11 @@ struct Cli {
     interval_secs: u64,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(long, env = "CLICKHOUSE_TO_FALKORDB_METRICS_PORT", default_value_t = 9991)]
+    #[arg(
+        long,
+        env = "CLICKHOUSE_TO_FALKORDB_METRICS_PORT",
+        default_value_t = 9991
+    )]
     metrics_port: u16,
 
     /// Introspect source ClickHouse schema and print a normalized summary.

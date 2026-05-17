@@ -345,8 +345,10 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
         "# Review labels, relationship names, key choices, and incremental delta settings."
             .to_string(),
     ];
-    notes.push("# Snowflake FK metadata may be partial depending on source constraints/privileges."
-        .to_string());
+    notes.push(
+        "# Snowflake FK metadata may be partial depending on source constraints/privileges."
+            .to_string(),
+    );
     notes.push("# Snowflake index metadata is best-effort and currently inferred from PK/UNIQUE constraints."
         .to_string());
     if !draft.notes.is_empty() {
@@ -530,7 +532,11 @@ fn infer_graph_model(schema: &SchemaMetadata) -> Result<GraphDraft> {
     })
 }
 
-fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetadata) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    draft: &GraphDraft,
+    schema: &SchemaMetadata,
+) -> TemplateConfig {
     let sf_cfg = cfg.snowflake.as_ref();
     let mut mappings = Vec::new();
 
@@ -645,10 +651,16 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
     let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = ["updated_at", "updatedon", "modified_at", "last_updated_at", "last_update"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string())?;
+    let updated = [
+        "updated_at",
+        "updatedon",
+        "modified_at",
+        "last_updated_at",
+        "last_update",
+    ]
+    .iter()
+    .find(|c| colset.contains(**c))
+    .map(|s| (*s).to_string())?;
     let deleted = ["is_deleted", "deleted", "is_active"]
         .iter()
         .find(|c| colset.contains(**c))
@@ -707,7 +719,13 @@ fn looks_like_join_table(table: &TableMetadata) -> bool {
         .flat_map(|f| f.columns.iter().map(String::as_str))
         .collect();
     let pk_cols: HashSet<&str> = table.primary_key.iter().map(String::as_str).collect();
-    let allowed_meta = ["created_at", "updated_at", "created_on", "updated_on", "is_deleted"];
+    let allowed_meta = [
+        "created_at",
+        "updated_at",
+        "created_on",
+        "updated_on",
+        "is_deleted",
+    ];
     table.columns.iter().all(|c| {
         fk_cols.contains(c.name.as_str())
             || pk_cols.contains(c.name.as_str())
@@ -763,7 +781,9 @@ fn to_rel_name(name: &str) -> String {
     snake_case(name).to_ascii_uppercase()
 }
 
-async fn snowflake_session(sf_cfg: &SnowflakeConfig) -> Result<snowflake_connector_rs::SnowflakeSession> {
+async fn snowflake_session(
+    sf_cfg: &SnowflakeConfig,
+) -> Result<snowflake_connector_rs::SnowflakeSession> {
     let auth = if let Some(key_path) = &sf_cfg.private_key_path {
         let pem = std::fs::read_to_string(key_path)?;
         let pass_bytes = sf_cfg.password.as_deref().unwrap_or("").as_bytes().to_vec();
@@ -983,7 +1003,8 @@ fn get_opt_string(map: &JsonMap<String, JsonValue>, key: &str) -> Option<String>
 }
 
 fn get_req_u64(map: &JsonMap<String, JsonValue>, key: &str) -> Result<u64> {
-    let v = lookup_ci(map, key).ok_or_else(|| anyhow!("missing required numeric value for {}", key))?;
+    let v =
+        lookup_ci(map, key).ok_or_else(|| anyhow!("missing required numeric value for {}", key))?;
     match v {
         JsonValue::Number(n) => n
             .as_u64()
@@ -1001,4 +1022,3 @@ fn lookup_ci<'a>(map: &'a JsonMap<String, JsonValue>, key: &str) -> Option<&'a J
         .or_else(|| map.get(&key.to_ascii_uppercase()))
         .or_else(|| map.get(&key.to_ascii_lowercase()))
 }
-

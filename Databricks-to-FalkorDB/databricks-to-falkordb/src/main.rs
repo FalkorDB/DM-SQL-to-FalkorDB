@@ -29,7 +29,11 @@ struct Cli {
     config: PathBuf,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(long, env = "DATABRICKS_TO_FALKORDB_METRICS_PORT", default_value_t = 9994)]
+    #[arg(
+        long,
+        env = "DATABRICKS_TO_FALKORDB_METRICS_PORT",
+        default_value_t = 9994
+    )]
     metrics_port: u16,
 
     /// Introspect source Databricks schema and print a normalized summary.

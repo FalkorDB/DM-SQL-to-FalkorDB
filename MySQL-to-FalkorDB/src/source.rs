@@ -170,8 +170,7 @@ fn build_paged_sql(
 
 fn mysql_opts(mysql_cfg: &MySqlConfig) -> Result<Opts> {
     if let Some(url) = &mysql_cfg.url {
-        return Opts::from_url(url)
-            .with_context(|| "Failed to parse MySQL URL in `mysql.url`");
+        return Opts::from_url(url).with_context(|| "Failed to parse MySQL URL in `mysql.url`");
     }
 
     let host = mysql_cfg
@@ -180,9 +179,7 @@ fn mysql_opts(mysql_cfg: &MySqlConfig) -> Result<Opts> {
         .unwrap_or_else(|| "localhost".to_string());
     let port = mysql_cfg.port.unwrap_or(3306);
 
-    let mut builder = OptsBuilder::default()
-        .ip_or_hostname(host)
-        .tcp_port(port);
+    let mut builder = OptsBuilder::default().ip_or_hostname(host).tcp_port(port);
 
     if let Some(user) = mysql_cfg.user.clone() {
         builder = builder.user(Some(user));
@@ -292,9 +289,7 @@ fn mysql_value_to_json(value: Value) -> JsonValue {
         Value::Time(is_neg, days, hours, minutes, seconds, micros) => {
             let sign = if is_neg { "-" } else { "" };
             if micros == 0 {
-                JsonValue::String(format!(
-                    "{sign}{days} {hours:02}:{minutes:02}:{seconds:02}"
-                ))
+                JsonValue::String(format!("{sign}{days} {hours:02}:{minutes:02}:{seconds:02}"))
             } else {
                 JsonValue::String(format!(
                     "{sign}{days} {hours:02}:{minutes:02}:{seconds:02}.{micros:06}"

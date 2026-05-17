@@ -413,7 +413,11 @@ fn infer_graph_model(schema: &SchemaMetadata) -> Result<GraphDraft> {
     })
 }
 
-fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetadata) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    draft: &GraphDraft,
+    schema: &SchemaMetadata,
+) -> TemplateConfig {
     let ch_cfg = cfg.clickhouse.as_ref();
     let mut mappings = Vec::new();
 
@@ -507,10 +511,16 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
     let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = ["updated_at", "updatedon", "modified_at", "last_updated_at", "last_update"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string())?;
+    let updated = [
+        "updated_at",
+        "updatedon",
+        "modified_at",
+        "last_updated_at",
+        "last_update",
+    ]
+    .iter()
+    .find(|c| colset.contains(**c))
+    .map(|s| (*s).to_string())?;
     let deleted = ["is_deleted", "deleted", "is_active"]
         .iter()
         .find(|c| colset.contains(**c))
@@ -652,10 +662,7 @@ async fn fetch_columns(
             .and_then(JsonValue::as_str)
             .ok_or_else(|| anyhow!("invalid system.columns row: missing name"))?
             .to_string();
-        let ordinal_position = row
-            .get("position")
-            .and_then(JsonValue::as_u64)
-            .unwrap_or(0);
+        let ordinal_position = row.get("position").and_then(JsonValue::as_u64).unwrap_or(0);
         let data_type = row
             .get("type")
             .and_then(JsonValue::as_str)
@@ -674,7 +681,9 @@ async fn fetch_columns(
             if v.is_null() {
                 None
             } else {
-                v.as_str().map(ToOwned::to_owned).or_else(|| Some(v.to_string()))
+                v.as_str()
+                    .map(ToOwned::to_owned)
+                    .or_else(|| Some(v.to_string()))
             }
         });
         out.push((
@@ -785,7 +794,11 @@ async fn run_json_each_row_query(
             .with_context(|| "Failed to parse ClickHouse JSONEachRow line")?;
         match value {
             JsonValue::Object(map) => out.push(map),
-            _ => return Err(anyhow!("Expected JSON object from JSONEachRow introspection query")),
+            _ => {
+                return Err(anyhow!(
+                    "Expected JSON object from JSONEachRow introspection query"
+                ))
+            }
         }
     }
     Ok(out)
@@ -794,4 +807,3 @@ async fn run_json_each_row_query(
 fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
-
