@@ -1,6 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
 use crate::config::{Config, EntityMapping, FalkorConfig, NodeMappingConfig};
 use crate::mapping::{map_rows_to_edges, map_rows_to_nodes};
 use crate::metrics::METRICS;
@@ -11,6 +8,9 @@ use crate::sink_async::{
 };
 use crate::source::{fetch_rows_for_mapping, LogicalRow};
 use crate::state::{load_watermarks, save_watermarks};
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use std::collections::{HashMap, HashSet};
 
 fn partition_by_deleted<'a>(
     rows: &'a [LogicalRow],

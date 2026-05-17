@@ -14,7 +14,8 @@ use crate::models::{bad_request, not_found};
 use crate::models::{
     ApiResult, AppState, CanvasData, CanvasLink, CanvasNode, ExecutionBackend,
     GenerateScaffoldTemplateRequest, GenerateScaffoldTemplateResponse,
-    GenerateSchemaGraphPreviewRequest, GenerateSchemaGraphPreviewResponse, SchemaGraphPreviewSource,
+    GenerateSchemaGraphPreviewRequest, GenerateSchemaGraphPreviewResponse,
+    SchemaGraphPreviewSource,
 };
 use crate::tools::Tool;
 
@@ -340,9 +341,13 @@ async fn run_scaffold_generation_kubernetes(
         ));
     }
 
-    let wait_result =
-        kubectl_wait_for_job_completion(&state.execution.kubernetes.kubectl_bin, &state.execution.kubernetes.namespace, &job_name, 180)
-            .await;
+    let wait_result = kubectl_wait_for_job_completion(
+        &state.execution.kubernetes.kubectl_bin,
+        &state.execution.kubernetes.namespace,
+        &job_name,
+        180,
+    )
+    .await;
     let logs = kubectl_get_job_logs(
         &state.execution.kubernetes.kubectl_bin,
         &state.execution.kubernetes.namespace,

@@ -285,7 +285,12 @@ pub async fn introspect_databricks_schema(cfg: &Config) -> Result<IntrospectionR
     let current_schema = current_rows
         .first()
         .and_then(|r| get_opt_string(r, "schema_name"))
-        .unwrap_or_else(|| db_cfg.schema.clone().unwrap_or_else(|| "default".to_string()));
+        .unwrap_or_else(|| {
+            db_cfg
+                .schema
+                .clone()
+                .unwrap_or_else(|| "default".to_string())
+        });
     let target_catalog = db_cfg.catalog.clone().unwrap_or(current_catalog);
     let target_schema = db_cfg.schema.clone().unwrap_or(current_schema);
 
@@ -550,10 +555,16 @@ fn infer_graph_model(schema: &SchemaMetadata) -> GraphDraft {
             if table.foreign_keys.len() >= 2 {
                 let fk_a = &table.foreign_keys[0];
                 let fk_b = &table.foreign_keys[1];
-                let from_key =
-                    qualified_table_key(&schema.catalog, &fk_a.referenced_schema, &fk_a.referenced_table);
-                let to_key =
-                    qualified_table_key(&schema.catalog, &fk_b.referenced_schema, &fk_b.referenced_table);
+                let from_key = qualified_table_key(
+                    &schema.catalog,
+                    &fk_a.referenced_schema,
+                    &fk_a.referenced_table,
+                );
+                let to_key = qualified_table_key(
+                    &schema.catalog,
+                    &fk_b.referenced_schema,
+                    &fk_b.referenced_table,
+                );
                 let Some(from_node) = node_by_table.get(from_key.as_str()) else {
                     continue;
                 };
@@ -623,10 +634,18 @@ fn infer_graph_model(schema: &SchemaMetadata) -> GraphDraft {
         }
     }
     edges.sort_by(|a, b| a.mapping_name.cmp(&b.mapping_name));
-    GraphDraft { nodes, edges, notes }
+    GraphDraft {
+        nodes,
+        edges,
+        notes,
+    }
 }
 
-fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetadata) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    draft: &GraphDraft,
+    schema: &SchemaMetadata,
+) -> TemplateConfig {
     let db_cfg = cfg.databricks.as_ref();
     let mut mappings = Vec::new();
     for n in &draft.nodes {
@@ -726,10 +745,16 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
     let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = ["updated_at", "updatedon", "modified_at", "last_updated_at", "last_update"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string())?;
+    let updated = [
+        "updated_at",
+        "updatedon",
+        "modified_at",
+        "last_updated_at",
+        "last_update",
+    ]
+    .iter()
+    .find(|c| colset.contains(**c))
+    .map(|s| (*s).to_string())?;
     let deleted = ["is_deleted", "deleted", "is_active"]
         .iter()
         .find(|c| colset.contains(**c))
@@ -790,7 +815,13 @@ fn looks_like_join_table(table: &TableMetadata) -> bool {
         .flat_map(|f| f.columns.iter().map(String::as_str))
         .collect();
     let pk_cols: HashSet<&str> = table.primary_key.iter().map(String::as_str).collect();
-    let allowed_meta = ["created_at", "updated_at", "created_on", "updated_on", "is_deleted"];
+    let allowed_meta = [
+        "created_at",
+        "updated_at",
+        "created_on",
+        "updated_on",
+        "is_deleted",
+    ];
     table.columns.iter().all(|c| {
         fk_cols.contains(c.name.as_str())
             || pk_cols.contains(c.name.as_str())
@@ -994,10 +1025,17 @@ impl DatabricksClient {
         let cols = v
             .pointer("/result/manifest/schema/columns")
             .and_then(|c| c.as_array())
-            .ok_or_else(|| anyhow!("Missing result.manifest.schema.columns in Databricks response"))?;
+            .ok_or_else(|| {
+                anyhow!("Missing result.manifest.schema.columns in Databricks response")
+            })?;
         let col_names: Vec<String> = cols
             .iter()
-            .map(|c| c.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string())
+            .map(|c| {
+                c.get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
             .collect();
         let data = v
             .pointer("/result/data_array")
@@ -1074,4 +1112,3 @@ mod tests {
         assert_eq!(delta.updated_at_column, "last_update");
     }
 }
-

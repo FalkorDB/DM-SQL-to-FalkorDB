@@ -352,7 +352,8 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
 
     let mut notes = vec![
         "# Auto-generated template from source schema introspection.".to_string(),
-        "# Review labels, relationship names, key choices, and incremental delta settings.".to_string(),
+        "# Review labels, relationship names, key choices, and incremental delta settings."
+            .to_string(),
     ];
     if !draft.notes.is_empty() {
         notes.push("# Notes requiring manual review:".to_string());
@@ -492,10 +493,18 @@ fn infer_graph_model(schema: &SchemaMetadata) -> Result<GraphDraft> {
     }
     edges.sort_by(|a, b| a.mapping_name.cmp(&b.mapping_name));
 
-    Ok(GraphDraft { nodes, edges, notes })
+    Ok(GraphDraft {
+        nodes,
+        edges,
+        notes,
+    })
 }
 
-fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetadata) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    draft: &GraphDraft,
+    schema: &SchemaMetadata,
+) -> TemplateConfig {
     let mut mappings = Vec::new();
     for n in &draft.nodes {
         let mut props = BTreeMap::new();
@@ -508,7 +517,11 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 source: TemplateSource {
                     table: n.table_key.clone(),
                 },
-                mode: if n.delta.is_some() { "incremental".to_string() } else { "full".to_string() },
+                mode: if n.delta.is_some() {
+                    "incremental".to_string()
+                } else {
+                    "full".to_string()
+                },
                 delta: n.delta.clone(),
             },
             labels: vec![n.label.clone()],
@@ -531,7 +544,11 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
                 source: TemplateSource {
                     table: infer_qualified_source_table(schema, e),
                 },
-                mode: if e.delta.is_some() { "incremental".to_string() } else { "full".to_string() },
+                mode: if e.delta.is_some() {
+                    "incremental".to_string()
+                } else {
+                    "full".to_string()
+                },
                 delta: e.delta.clone(),
             },
             relationship: e.relationship.clone(),
@@ -580,10 +597,16 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
     let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = ["updated_at", "updatedon", "modified_at", "last_updated_at", "last_update"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string())?;
+    let updated = [
+        "updated_at",
+        "updatedon",
+        "modified_at",
+        "last_updated_at",
+        "last_update",
+    ]
+    .iter()
+    .find(|c| colset.contains(**c))
+    .map(|s| (*s).to_string())?;
     let deleted = ["is_deleted", "deleted", "is_active"]
         .iter()
         .find(|c| colset.contains(**c))
@@ -651,7 +674,13 @@ fn looks_like_join_table(table: &TableMetadata) -> bool {
         .flat_map(|f| f.columns.iter().map(String::as_str))
         .collect();
     let pk_cols: HashSet<&str> = table.primary_key.iter().map(String::as_str).collect();
-    let allowed_meta = ["created_at", "updated_at", "created_on", "updated_on", "is_deleted"];
+    let allowed_meta = [
+        "created_at",
+        "updated_at",
+        "created_on",
+        "updated_on",
+        "is_deleted",
+    ];
     table.columns.iter().all(|c| {
         fk_cols.contains(c.name.as_str())
             || pk_cols.contains(c.name.as_str())
@@ -760,15 +789,17 @@ async fn fetch_columns(
     let rows: Vec<Row> = conn.exec(sql, (db,)).await?;
     rows.into_iter()
         .map(|r| {
-            let (schema, table, column_name, ordinal_position, is_nullable, data_type, column_default): (
-                String,
-                String,
-                String,
-                u64,
-                String,
-                String,
-                Option<String>,
-            ) = mysql_async::from_row_opt(r).map_err(|e| anyhow!("Failed parsing column row: {}", e))?;
+            let (
+                schema,
+                table,
+                column_name,
+                ordinal_position,
+                is_nullable,
+                data_type,
+                column_default,
+            ): (String, String, String, u64, String, String, Option<String>) =
+                mysql_async::from_row_opt(r)
+                    .map_err(|e| anyhow!("Failed parsing column row: {}", e))?;
             Ok((
                 schema,
                 table,
@@ -823,7 +854,10 @@ async fn fetch_keys(
             u64,
         ) = mysql_async::from_row_opt(row).map_err(|e| anyhow!("Failed parsing key row: {}", e))?;
         if constraint_type == "PRIMARY KEY" {
-            pk_by_table.entry((schema, table)).or_default().push(column_name);
+            pk_by_table
+                .entry((schema, table))
+                .or_default()
+                .push(column_name);
         } else {
             unique_rows
                 .entry((schema, table))
@@ -1027,7 +1061,12 @@ mod tests {
             &["order_id", "product_id"],
             &[],
             &[
-                ("fk_order_items_order", vec!["order_id"], "orders", vec!["order_id"]),
+                (
+                    "fk_order_items_order",
+                    vec!["order_id"],
+                    "orders",
+                    vec!["order_id"],
+                ),
                 (
                     "fk_order_items_product",
                     vec!["product_id"],

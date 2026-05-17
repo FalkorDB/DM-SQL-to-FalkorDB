@@ -130,7 +130,8 @@ async fn ensure_falkordb_indexes(
             EntityMapping::Edge(edge_cfg) => {
                 let from_labels = if let Some(labels) = &edge_cfg.from.label_override {
                     labels.clone()
-                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.from.node_mapping.as_str()) {
+                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.from.node_mapping.as_str())
+                {
                     node_cfg.labels.clone()
                 } else {
                     tracing::warn!(

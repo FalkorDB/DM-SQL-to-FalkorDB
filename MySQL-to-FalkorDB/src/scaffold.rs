@@ -346,7 +346,8 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
 
     let mut notes = vec![
         "# Auto-generated template from source schema introspection.".to_string(),
-        "# Review labels, relationship names, key choices, and incremental delta settings.".to_string(),
+        "# Review labels, relationship names, key choices, and incremental delta settings."
+            .to_string(),
     ];
     if !draft.notes.is_empty() {
         notes.push("# Notes requiring manual review:".to_string());
@@ -367,7 +368,6 @@ struct GraphDraft {
 
 fn infer_graph_model(schema: &SchemaMetadata) -> Result<GraphDraft> {
     let mut notes = Vec::new();
-
 
     let join_tables: HashSet<String> = schema
         .tables
@@ -518,7 +518,11 @@ fn infer_graph_model(schema: &SchemaMetadata) -> Result<GraphDraft> {
     })
 }
 
-fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetadata) -> TemplateConfig {
+fn build_template_config(
+    cfg: &Config,
+    draft: &GraphDraft,
+    schema: &SchemaMetadata,
+) -> TemplateConfig {
     let graph_name = cfg.falkordb.graph.clone();
     let mut mappings = Vec::new();
 
@@ -613,10 +617,16 @@ fn build_template_config(cfg: &Config, draft: &GraphDraft, schema: &SchemaMetada
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
     let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = ["updated_at", "updatedon", "modified_at", "last_updated_at", "last_update"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string())?;
+    let updated = [
+        "updated_at",
+        "updatedon",
+        "modified_at",
+        "last_updated_at",
+        "last_update",
+    ]
+    .iter()
+    .find(|c| colset.contains(**c))
+    .map(|s| (*s).to_string())?;
     let deleted = ["is_deleted", "deleted", "is_active"]
         .iter()
         .find(|c| colset.contains(**c))
@@ -672,7 +682,10 @@ fn choose_key_column(table: &TableMetadata) -> (String, Option<String>) {
         );
     }
 
-    ("id".to_string(), Some("table has no columns; using synthetic key placeholder".to_string()))
+    (
+        "id".to_string(),
+        Some("table has no columns; using synthetic key placeholder".to_string()),
+    )
 }
 
 fn looks_like_join_table(table: &TableMetadata) -> bool {
@@ -803,16 +816,17 @@ async fn fetch_columns(
     let rows: Vec<Row> = conn.exec(sql, (db,)).await?;
     rows.into_iter()
         .map(|r| {
-            let (schema, table, column_name, ordinal_position, is_nullable, data_type, column_default): (
-                String,
-                String,
-                String,
-                u64,
-                String,
-                String,
-                Option<String>,
-            ) = mysql_async::from_row_opt(r)
-                .map_err(|e| anyhow!("Failed parsing column row: {}", e))?;
+            let (
+                schema,
+                table,
+                column_name,
+                ordinal_position,
+                is_nullable,
+                data_type,
+                column_default,
+            ): (String, String, String, u64, String, String, Option<String>) =
+                mysql_async::from_row_opt(r)
+                    .map_err(|e| anyhow!("Failed parsing column row: {}", e))?;
             Ok((
                 schema,
                 table,
@@ -1074,7 +1088,12 @@ mod tests {
             &["order_id", "product_id"],
             &[],
             &[
-                ("fk_order_items_order", vec!["order_id"], "orders", vec!["order_id"]),
+                (
+                    "fk_order_items_order",
+                    vec!["order_id"],
+                    "orders",
+                    vec!["order_id"],
+                ),
                 (
                     "fk_order_items_product",
                     vec!["product_id"],
@@ -1100,7 +1119,12 @@ mod tests {
             &["order_id", "customer_id", "total", "updated_at"],
             &["order_id"],
             &[],
-            &[("fk_orders_customer", vec!["customer_id"], "customers", vec!["customer_id"])],
+            &[(
+                "fk_orders_customer",
+                vec!["customer_id"],
+                "customers",
+                vec!["customer_id"],
+            )],
         );
         let schema = SchemaMetadata {
             database: "testdb".to_string(),

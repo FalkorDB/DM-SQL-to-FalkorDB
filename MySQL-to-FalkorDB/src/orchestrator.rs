@@ -169,7 +169,8 @@ async fn ensure_falkordb_indexes(
             EntityMapping::Edge(edge_cfg) => {
                 let from_labels = if let Some(labels) = &edge_cfg.from.label_override {
                     labels.clone()
-                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.from.node_mapping.as_str()) {
+                } else if let Some(node_cfg) = node_by_name.get(edge_cfg.from.node_mapping.as_str())
+                {
                     node_cfg.labels.clone()
                 } else {
                     tracing::warn!(
@@ -720,8 +721,8 @@ mod tests {
             Ok(v) => v,
             Err(_) => return Ok(()),
         };
-        let graph =
-            std::env::var("FALKORDB_GRAPH").unwrap_or_else(|_| "mysql_to_falkordb_load_test".to_string());
+        let graph = std::env::var("FALKORDB_GRAPH")
+            .unwrap_or_else(|_| "mysql_to_falkordb_load_test".to_string());
 
         let tmp_dir = std::env::temp_dir();
         let input_path = tmp_dir.join("mysql_to_falkordb_nodes.json");

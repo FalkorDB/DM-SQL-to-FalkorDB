@@ -502,8 +502,8 @@ mod tests {
             Ok(v) => v,
             Err(_) => return Ok(()),
         };
-        let graph =
-            std::env::var("FALKORDB_GRAPH").unwrap_or_else(|_| "mysql_to_falkordb_test".to_string());
+        let graph = std::env::var("FALKORDB_GRAPH")
+            .unwrap_or_else(|_| "mysql_to_falkordb_test".to_string());
 
         let cfg = FalkorConfig {
             endpoint,
