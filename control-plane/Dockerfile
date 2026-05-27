@@ -14,6 +14,7 @@ RUN cargo build --manifest-path control-plane/server/Cargo.toml --release
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 ARG KUBECTL_VERSION=v1.36.1
