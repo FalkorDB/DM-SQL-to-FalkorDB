@@ -21,6 +21,8 @@ type FalkorDBCanvasElement = HTMLElement & {
     foregroundColor?: string
     captionsKeys?: [string, boolean][]
     showPropertyKeyPrefix?: boolean
+    nodeStyle?: { fontSize?: number }
+    linkStyle?: { fontSize?: number }
     eventHandlers?: {
       onNodeClick?: (node: unknown, event: MouseEvent) => void
       onNodeRightClick?: (node: unknown, event: MouseEvent) => void
@@ -360,6 +362,8 @@ export default function ConfigEditorPage() {
       foregroundColor: isDark ? '#E5E7EB' : '#111827',
       captionsKeys: [['node_label', false], ['mapping_name', false]],
       showPropertyKeyPrefix: false,
+      nodeStyle: { fontSize: 5 },
+      linkStyle: { fontSize: 3 },
       eventHandlers: {
         onNodeClick: (node, event) => {
           openNodePopup(node, event)
