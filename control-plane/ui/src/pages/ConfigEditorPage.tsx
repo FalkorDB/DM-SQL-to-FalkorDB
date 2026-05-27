@@ -19,14 +19,16 @@ type FalkorDBCanvasElement = HTMLElement & {
   setConfig: (config: {
     backgroundColor?: string
     foregroundColor?: string
-    captionsKeys?: string[]
+    captionsKeys?: [string, boolean][]
     showPropertyKeyPrefix?: boolean
-    onNodeClick?: (node: unknown, event: MouseEvent) => void
-    onNodeRightClick?: (node: unknown, event: MouseEvent) => void
-    onLinkClick?: (link: unknown, event: MouseEvent) => void
-    onLinkRightClick?: (link: unknown, event: MouseEvent) => void
-    onBackgroundClick?: (event: MouseEvent) => void
-    onBackgroundRightClick?: (event: MouseEvent) => void
+    eventHandlers?: {
+      onNodeClick?: (node: unknown, event: MouseEvent) => void
+      onNodeRightClick?: (node: unknown, event: MouseEvent) => void
+      onLinkClick?: (link: unknown, event: MouseEvent) => void
+      onLinkRightClick?: (link: unknown, event: MouseEvent) => void
+      onBackgroundClick?: (event: MouseEvent) => void
+      onBackgroundRightClick?: (event: MouseEvent) => void
+    }
   }) => void
   zoomToFit?: (paddingMultiplier?: number) => void
 }
@@ -356,27 +358,29 @@ export default function ConfigEditorPage() {
     canvas.setConfig({
       backgroundColor: isDark ? '#0B1220' : '#FFFFFF',
       foregroundColor: isDark ? '#E5E7EB' : '#111827',
-      captionsKeys: ['node_label', 'mapping_name'],
+      captionsKeys: [['node_label', false], ['mapping_name', false]],
       showPropertyKeyPrefix: false,
-      onNodeClick: (node, event) => {
-        openNodePopup(node, event)
-      },
-      onNodeRightClick: (node, event) => {
-        event.preventDefault()
-        openNodePopup(node, event)
-      },
-      onLinkClick: (link, event) => {
-        openEdgePopup(link, event)
-      },
-      onLinkRightClick: (link, event) => {
-        event.preventDefault()
-        openEdgePopup(link, event)
-      },
-      onBackgroundClick: () => setCanvasPopup(null),
-      onBackgroundRightClick: (event) => {
-        event.preventDefault()
-        setCanvasPopup(null)
-      },
+      eventHandlers: {
+        onNodeClick: (node, event) => {
+          openNodePopup(node, event)
+        },
+        onNodeRightClick: (node, event) => {
+          event.preventDefault()
+          openNodePopup(node, event)
+        },
+        onLinkClick: (link, event) => {
+          openEdgePopup(link, event)
+        },
+        onLinkRightClick: (link, event) => {
+          event.preventDefault()
+          openEdgePopup(link, event)
+        },
+        onBackgroundClick: () => setCanvasPopup(null),
+        onBackgroundRightClick: (event) => {
+          event.preventDefault()
+          setCanvasPopup(null)
+        },
+      }
     })
 
     if (typeof canvas.zoomToFit === 'function' && canvasData.nodes.length > 0) {
