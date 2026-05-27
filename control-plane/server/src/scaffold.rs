@@ -1200,6 +1200,7 @@ fn build_canvas_data_from_config_content(
                     color: palette[(node_id as usize - 1) % palette.len()].to_string(),
                     visible: true,
                     caption: Some("mapping_name".to_string()),
+                    size: Some(16),
                     data: serde_json::json!({
                         "kind": "node",
                         "node_label": primary_label,

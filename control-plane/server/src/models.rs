@@ -218,6 +218,8 @@ pub struct CanvasNode {
     pub color: String,
     pub visible: bool,
     pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u32>,
     pub data: serde_json::Value,
 }
 
