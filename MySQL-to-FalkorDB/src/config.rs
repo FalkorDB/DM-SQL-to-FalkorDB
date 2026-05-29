@@ -121,6 +121,7 @@ pub enum EntityMapping {
 pub enum Mode {
     Full,
     Incremental,
+    Cdc,
 }
 
 #[derive(Debug, Deserialize)]

@@ -168,7 +168,7 @@ fn build_paged_sql(
     Ok(sql)
 }
 
-fn mysql_opts(mysql_cfg: &MySqlConfig) -> Result<Opts> {
+pub fn mysql_opts(mysql_cfg: &MySqlConfig) -> Result<Opts> {
     if let Some(url) = &mysql_cfg.url {
         return Opts::from_url(url).with_context(|| "Failed to parse MySQL URL in `mysql.url`");
     }
