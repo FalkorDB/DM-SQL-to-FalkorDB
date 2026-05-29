@@ -45,6 +45,14 @@ pub struct PostgresConfig {
     pub fetch_batch_size: Option<usize>,
     #[serde(default)]
     pub query_timeout_ms: Option<u64>,
+
+    // CDC specific fields
+    #[serde(default)]
+    pub publication_name: Option<String>,
+    #[serde(default)]
+    pub slot_name: Option<String>,
+    #[serde(default)]
+    pub flush_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,11 +106,12 @@ pub enum EntityMapping {
     Edge(EdgeMappingConfig),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     Full,
     Incremental,
+    Cdc,
 }
 
 #[derive(Debug, Deserialize)]

@@ -175,7 +175,27 @@ fn build_sql_for_mapping(mapping: &CommonMappingFields, watermark: Option<&str>)
 
 /// Connect to PostgreSQL using the provided configuration.
 pub(crate) async fn connect_postgres(cfg: &PostgresConfig) -> Result<Client> {
-    let conn_str = build_conn_string(cfg)?;
+    connect_postgres_with_replication(cfg, false).await
+}
+
+pub(crate) async fn connect_postgres_with_replication(
+    cfg: &PostgresConfig,
+    replication: bool,
+) -> Result<Client> {
+    let mut conn_str = build_conn_string(cfg)?;
+    if replication {
+        if !conn_str.contains("replication=") {
+            if conn_str.starts_with("postgres://") || conn_str.starts_with("postgresql://") {
+                if conn_str.contains('?') {
+                    conn_str.push_str("&replication=database");
+                } else {
+                    conn_str.push_str("?replication=database");
+                }
+            } else {
+                conn_str.push_str(" replication=database");
+            }
+        }
+    }
     let (pg_cfg, ssl_mode) = parse_pg_config_with_ssl_mode(&conn_str)?;
 
     let client = match ssl_mode {
