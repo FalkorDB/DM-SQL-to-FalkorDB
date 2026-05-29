@@ -1,3 +1,4 @@
+mod cdc;
 mod config;
 mod cypher;
 mod mapping;

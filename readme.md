@@ -119,7 +119,7 @@ Most configs reference environment variables for secrets (for example `$DATABRIC
 ### MariaDB → FalkorDB
 
 - Location: `MariaDB-to-FalkorDB/`
-- What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- What it does: Migrates and continuously syncs data from MariaDB into FalkorDB (supports full, incremental polling, or true **logical replication CDC** modes, optional purge modes, and daemon mode).
 - Scaffolding: supports schema extraction and template generation from metadata (`information_schema`) with PK/UK/FK-based inference, join-table heuristics, and schema-qualified source table output.
 - Documentation: [MariaDB-to-FalkorDB/readme.md](MariaDB-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
