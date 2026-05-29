@@ -17,7 +17,9 @@ The design mirrors the existing Snowflake-to-FalkorDB and Databricks-to-FalkorDB
   - Writes nodes and edges using Cypher `UNWIND` + `MERGE`.
   - Applies explicit `falkordb.indexes` plus implicit indexes on node keys and edge endpoint `match_on` properties for better MERGE/MATCH performance.
 - **Incremental sync with delta**
-  - Per-mapping `mode: full` or `mode: incremental`.
+  - Per-mapping `mode: full`, `mode: incremental`, or `mode: cdc`.
+  - **CDC Mode (Logical Replication)**: Track precise INSERT, UPDATE, and DELETE operations via PostgreSQL's native `pgoutput` Write-Ahead Log (WAL) streaming. No `updated_at` column required!
+  - **Incremental Polling**: Fallback watermark polling using a `delta.updated_at_column` for instances where logical replication is unavailable.
   - Watermark column (`delta.updated_at_column`) used to fetch only new/updated rows.
   - Optional soft delete semantics using `delta.deleted_flag_column` and `delta.deleted_flag_value`.
   - Optional `delta.initial_full_load: false` to skip the initial backfill and start syncing "from now".
@@ -60,8 +62,11 @@ postgres:
   # password: "$POSTGRES_PASSWORD"
   # dbname: "source_db"
   # sslmode: "require"          # supports disable/prefer/require/verify-ca/verify-full
-  fetch_batch_size: 10000       # optional; enables paged SELECTs for incremental loads
+  fetch_batch_size: 10000       # optional; enables paged SELECTs for incremental loads/CDC peeks
   query_timeout_ms: 60000       # optional; sets statement_timeout per session
+  # publication_name: "falkordb_pub" # optional; overrides the default Postgres logical publication name
+  # slot_name: "falkordb_slot"       # optional; overrides the default Postgres logical replication slot name
+  # flush_interval_ms: 5000          # optional; controls how frequently CDC events are flushed to the graph
 
 falkordb:
   endpoint: "falkor://127.0.0.1:6379"
@@ -145,6 +150,11 @@ Key points:
 - TLS mode can be controlled through `postgres.sslmode` (or URL query `sslmode`), including `verify-ca` and `verify-full`.
 
 Watermarks per mapping are stored in the `state` backend, keyed by mapping name.
+
+### Change Data Capture (CDC)
+When `mode: cdc` is set, the tool requires the source PostgreSQL database to be configured with `wal_level = logical`. It establishes a replication connection and uses the `pgoutput` plugin to seamlessly track changes without requiring an `updated_at` column. 
+
+The `cdc` mode natively supports tracking hard `DELETE` operations. Instead of saving timestamp watermarks, it safely commits the Log Sequence Number (LSN) directly back to the PostgreSQL server only after a batch successfully commits to FalkorDB, allowing PostgreSQL to automatically reclaim WAL disk space. 
 
 - If `delta.initial_full_load` is **unset** or `true` for an incremental mapping and no watermark exists, the first run does a full load.
 - If `delta.initial_full_load: false` and no watermark exists, the first run *skips* that mapping and seeds its watermark to "now", so subsequent runs only see new changes.
