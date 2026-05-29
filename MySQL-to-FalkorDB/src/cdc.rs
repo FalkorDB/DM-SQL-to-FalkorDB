@@ -381,3 +381,59 @@ async fn flush_buffers(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mysql_async::binlog::row::BinlogRow;
+    use mysql_async::binlog::value::BinlogValue;
+    use mysql_async::Value as MySqlValue;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_binlog_row_to_logical_row() {
+        let cols = vec![
+            "id".to_string(),
+            "name".to_string(),
+            "created_at".to_string(),
+        ];
+
+        let values = vec![
+            Some(BinlogValue::Value(MySqlValue::Int(42))),
+            Some(BinlogValue::Value(MySqlValue::Bytes(b"Alice".to_vec()))),
+            Some(BinlogValue::Value(MySqlValue::Date(
+                2023, 10, 15, 14, 30, 0, 0,
+            ))),
+        ];
+
+        // The second parameter is an Arc<[Column]> which we can just pass as empty for our mock
+        let binlog_row = BinlogRow::new(values, Arc::new([]));
+
+        let logical_row = binlog_row_to_logical_row(binlog_row, &cols).expect("Should convert");
+
+        assert_eq!(logical_row.get("id"), Some(&json!(42)));
+        assert_eq!(logical_row.get("name"), Some(&json!("Alice")));
+        assert_eq!(
+            logical_row.get("created_at"),
+            Some(&json!("2023-10-15 14:30:00"))
+        );
+    }
+
+    #[test]
+    fn test_binlog_row_to_logical_row_with_missing_col_names() {
+        let cols = vec!["id".to_string()];
+
+        let values = vec![
+            Some(BinlogValue::Value(MySqlValue::Int(42))),
+            Some(BinlogValue::Value(MySqlValue::Bytes(b"Bob".to_vec()))), // Missing col name
+        ];
+
+        let binlog_row = BinlogRow::new(values, Arc::new([]));
+
+        let logical_row = binlog_row_to_logical_row(binlog_row, &cols).expect("Should convert");
+
+        assert_eq!(logical_row.get("id"), Some(&json!(42)));
+        assert_eq!(logical_row.get("col_1"), Some(&json!("Bob")));
+    }
+}
