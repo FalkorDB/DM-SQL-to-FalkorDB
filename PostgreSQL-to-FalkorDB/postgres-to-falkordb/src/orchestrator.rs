@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 
+use crate::cdc::run_cdc_batch;
 use crate::config::{Config, EntityMapping, FalkorConfig, NodeMappingConfig};
 use crate::mapping::{map_rows_to_edges, map_rows_to_nodes};
 use crate::metrics::METRICS;
@@ -218,9 +219,24 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
 
     let batch_size = cfg.falkordb.max_unwind_batch_size.unwrap_or(1000).max(1);
 
+    // Also run CDC batch if any mappings are in CDC mode
+    let has_cdc = cfg.mappings.iter().any(|m| match m {
+        EntityMapping::Node(n) => n.common.mode == crate::config::Mode::Cdc,
+        EntityMapping::Edge(e) => e.common.mode == crate::config::Mode::Cdc,
+    });
+
+    if has_cdc {
+        if let Err(e) = run_cdc_batch(cfg).await {
+            tracing::error!("CDC batch failed: {}", e);
+        }
+    }
+
     for mapping in &cfg.mappings {
         match mapping {
             EntityMapping::Node(node_cfg) => {
+                if node_cfg.common.mode == crate::config::Mode::Cdc {
+                    continue;
+                }
                 tracing::info!(mapping = %node_cfg.common.name, "Processing node mapping");
                 METRICS.inc_mapping_run(&node_cfg.common.name);
                 let node_result: Result<()> = async {
@@ -312,6 +328,9 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
                 }
             }
             EntityMapping::Edge(edge_cfg) => {
+                if edge_cfg.common.mode == crate::config::Mode::Cdc {
+                    continue;
+                }
                 tracing::info!(mapping = %edge_cfg.common.name, "Processing edge mapping");
                 METRICS.inc_mapping_run(&edge_cfg.common.name);
                 let edge_result: Result<()> = async {
@@ -475,15 +494,67 @@ pub async fn run_once(cfg: &Config) -> Result<()> {
 pub async fn run_daemon(cfg: &Config, interval_secs: u64) -> Result<()> {
     use tokio::time::{interval, Duration};
 
-    let mut ticker = interval(Duration::from_secs(interval_secs));
+    let has_cdc = cfg.mappings.iter().any(|m| match m {
+        EntityMapping::Node(n) => n.common.mode == crate::config::Mode::Cdc,
+        EntityMapping::Edge(e) => e.common.mode == crate::config::Mode::Cdc,
+    });
+    let has_incremental = cfg.mappings.iter().any(|m| match m {
+        EntityMapping::Node(n) => n.common.mode != crate::config::Mode::Cdc,
+        EntityMapping::Edge(e) => e.common.mode != crate::config::Mode::Cdc,
+    });
 
-    loop {
-        ticker.tick().await;
+    if has_cdc && !has_incremental {
+        // Only CDC mappings, just loop CDC
+        let mut ticker = interval(Duration::from_millis(
+            cfg.postgres
+                .as_ref()
+                .and_then(|p| p.flush_interval_ms)
+                .unwrap_or(5000),
+        ));
+        loop {
+            ticker.tick().await;
+            if let Err(e) = run_cdc_batch(cfg).await {
+                tracing::error!("CDC batch failed: {}", e);
+            }
+        }
+    } else if !has_cdc && has_incremental {
+        let mut ticker = interval(Duration::from_secs(interval_secs));
+        loop {
+            ticker.tick().await;
+            tracing::info!("Starting sync run");
+            if let Err(e) = run_once(cfg).await {
+                tracing::error!(error = %e, "Sync run failed");
+                METRICS.inc_failed_runs();
+            }
+        }
+    } else {
+        // Both CDC and Incremental.
+        // We'll run them sequentially in the same loop but at different frequencies?
+        // Let's just run them sequentially. For CDC we want to run more frequently.
+        // The simplest approach without cloning `cfg` is to use two timers in a select loop.
+        let mut cdc_ticker = interval(Duration::from_millis(
+            cfg.postgres
+                .as_ref()
+                .and_then(|p| p.flush_interval_ms)
+                .unwrap_or(5000),
+        ));
+        let mut inc_ticker = interval(Duration::from_secs(interval_secs));
 
-        tracing::info!("Starting sync run");
-        if let Err(e) = run_once(cfg).await {
-            tracing::error!(error = %e, "Sync run failed");
-            METRICS.inc_failed_runs();
+        loop {
+            tokio::select! {
+                _ = cdc_ticker.tick() => {
+                    if let Err(e) = run_cdc_batch(cfg).await {
+                        tracing::error!("CDC batch failed: {}", e);
+                    }
+                }
+                _ = inc_ticker.tick() => {
+                    tracing::info!("Starting incremental sync run");
+                    if let Err(e) = run_once(cfg).await {
+                        tracing::error!(error = %e, "Sync run failed");
+                        METRICS.inc_failed_runs();
+                    }
+                }
+            }
         }
     }
 }
