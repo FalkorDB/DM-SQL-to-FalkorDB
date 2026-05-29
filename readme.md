@@ -144,7 +144,7 @@ cargo run --release -- --config mariadb.incremental.yaml --daemon --interval-sec
 ### MySQL → FalkorDB
 
 - Location: `MySQL-to-FalkorDB/`
-- What it does: Migrates and continuously syncs data from MySQL into FalkorDB (supports full/incremental modes, optional purge modes, and daemon mode).
+- What it does: Migrates and continuously syncs data from MySQL into FalkorDB (supports full, incremental polling, or true **logical replication CDC** modes, optional purge modes, and daemon mode).
 - Scaffolding: supports schema extraction and template generation from metadata (`information_schema`) with PK/UK/FK-based inference, join-table heuristics, and schema-qualified source table output.
 - Documentation: [MySQL-to-FalkorDB/readme.md](MySQL-to-FalkorDB/readme.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)

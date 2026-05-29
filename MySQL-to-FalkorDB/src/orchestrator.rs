@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 
+use crate::cdc::run_cdc_stream;
 use crate::config::{
     CommonMappingFields, Config, EntityMapping, FalkorConfig, Mode, NodeMappingConfig,
 };
@@ -604,9 +605,23 @@ pub async fn run_once(
 
     let batch_size = cfg.falkordb.max_unwind_batch_size.unwrap_or(1000).max(1);
 
+    let has_cdc = cfg.mappings.iter().any(|m| match m {
+        EntityMapping::Node(n) => n.common.mode == crate::config::Mode::Cdc,
+        EntityMapping::Edge(e) => e.common.mode == crate::config::Mode::Cdc,
+    });
+
+    if has_cdc {
+        if let Err(e) = run_cdc_stream(cfg).await {
+            tracing::error!("CDC stream failed: {}", e);
+        }
+    }
+
     for mapping in &cfg.mappings {
         match mapping {
             EntityMapping::Node(node_cfg) => {
+                if node_cfg.common.mode == crate::config::Mode::Cdc {
+                    continue;
+                }
                 if let Err(err) =
                     process_node_mapping(cfg, &mut graph, node_cfg, &mut watermarks, batch_size)
                         .await
