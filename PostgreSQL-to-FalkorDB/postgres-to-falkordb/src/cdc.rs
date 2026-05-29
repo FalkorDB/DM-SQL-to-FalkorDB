@@ -474,7 +474,7 @@ mod tests {
         buf.put_slice(b"users\0"); // name
         buf.put_u8(b'd'); // replica identity
         buf.put_u16(2); // num cols
-        
+
         // col 1
         buf.put_u8(1); // flags
         buf.put_slice(b"id\0"); // name
@@ -508,11 +508,11 @@ mod tests {
         buf.put_u8(b'N'); // new tuple
 
         buf.put_u16(2); // num cols
-        // col 1: text "1"
+                        // col 1: text "1"
         buf.put_u8(b't');
         buf.put_u32(1); // len
         buf.put_slice(b"1");
-        
+
         // col 2: text "Alice"
         buf.put_u8(b't');
         buf.put_u32(5); // len
@@ -537,14 +537,24 @@ mod tests {
             name: "users".into(),
             replica_identity: b'd',
             columns: vec![
-                RelationColumn { flags: 1, name: "id".into(), type_oid: 23, type_mod: -1 },
-                RelationColumn { flags: 0, name: "name".into(), type_oid: 25, type_mod: -1 },
-            ]
+                RelationColumn {
+                    flags: 1,
+                    name: "id".into(),
+                    type_oid: 23,
+                    type_mod: -1,
+                },
+                RelationColumn {
+                    flags: 0,
+                    name: "name".into(),
+                    type_oid: 25,
+                    type_mod: -1,
+                },
+            ],
         };
 
         let tuple = vec![Some("1".into()), Some("Alice".into())];
         let row = tuple_to_logical_row(&tuple, &rel).unwrap();
-        
+
         assert_eq!(row.get("id").unwrap().as_i64(), Some(1)); // Should parse "1" as number
         assert_eq!(row.get("name").unwrap().as_str(), Some("Alice"));
     }
