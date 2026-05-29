@@ -514,7 +514,7 @@ mod tests {
             dbname: None,
             sslmode: None,
             fetch_batch_size: None,
-            query_timeout_ms: Some(10_000),
+            query_timeout_ms: Some(10_000), publication_name: None, slot_name: None, flush_interval_ms: None,
         };
 
         let client = connect_postgres(&pg_cfg).await?;

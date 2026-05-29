@@ -451,3 +451,101 @@ async fn flush_buffers(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BufMut;
+    use bytes::BytesMut;
+
+    #[test]
+    fn test_read_c_string() {
+        let mut buf = Bytes::from_static(b"public\0");
+        let s = read_c_string(&mut buf).unwrap();
+        assert_eq!(s, "public");
+    }
+
+    #[test]
+    fn test_parse_relation() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(b'R');
+        buf.put_u32(12345); // oid
+        buf.put_slice(b"public\0"); // namespace
+        buf.put_slice(b"users\0"); // name
+        buf.put_u8(b'd'); // replica identity
+        buf.put_u16(2); // num cols
+        
+        // col 1
+        buf.put_u8(1); // flags
+        buf.put_slice(b"id\0"); // name
+        buf.put_i32(23); // type_oid (int4)
+        buf.put_i32(-1); // type_mod
+
+        // col 2
+        buf.put_u8(0); // flags
+        buf.put_slice(b"name\0"); // name
+        buf.put_i32(25); // type_oid (text)
+        buf.put_i32(-1); // type_mod
+
+        let msg = parse_pgoutput(buf.freeze()).unwrap();
+        if let PgOutputMessage::Relation(rel) = msg {
+            assert_eq!(rel.oid, 12345);
+            assert_eq!(rel.namespace, "public");
+            assert_eq!(rel.name, "users");
+            assert_eq!(rel.columns.len(), 2);
+            assert_eq!(rel.columns[0].name, "id");
+            assert_eq!(rel.columns[1].name, "name");
+        } else {
+            panic!("Expected Relation");
+        }
+    }
+
+    #[test]
+    fn test_parse_insert() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(b'I');
+        buf.put_u32(12345); // rel_id
+        buf.put_u8(b'N'); // new tuple
+
+        buf.put_u16(2); // num cols
+        // col 1: text "1"
+        buf.put_u8(b't');
+        buf.put_u32(1); // len
+        buf.put_slice(b"1");
+        
+        // col 2: text "Alice"
+        buf.put_u8(b't');
+        buf.put_u32(5); // len
+        buf.put_slice(b"Alice");
+
+        let msg = parse_pgoutput(buf.freeze()).unwrap();
+        if let PgOutputMessage::Insert { rel_id, tuple } = msg {
+            assert_eq!(rel_id, 12345);
+            assert_eq!(tuple.len(), 2);
+            assert_eq!(tuple[0].as_deref(), Some("1"));
+            assert_eq!(tuple[1].as_deref(), Some("Alice"));
+        } else {
+            panic!("Expected Insert");
+        }
+    }
+
+    #[test]
+    fn test_tuple_to_logical_row() {
+        let rel = Relation {
+            oid: 12345,
+            namespace: "public".into(),
+            name: "users".into(),
+            replica_identity: b'd',
+            columns: vec![
+                RelationColumn { flags: 1, name: "id".into(), type_oid: 23, type_mod: -1 },
+                RelationColumn { flags: 0, name: "name".into(), type_oid: 25, type_mod: -1 },
+            ]
+        };
+
+        let tuple = vec![Some("1".into()), Some("Alice".into())];
+        let row = tuple_to_logical_row(&tuple, &rel).unwrap();
+        
+        assert_eq!(row.get("id").unwrap().as_i64(), Some(1)); // Should parse "1" as number
+        assert_eq!(row.get("name").unwrap().as_str(), Some("Alice"));
+    }
+}
