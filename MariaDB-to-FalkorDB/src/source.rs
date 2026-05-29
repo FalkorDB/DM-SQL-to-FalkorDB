@@ -168,7 +168,7 @@ fn build_paged_sql(
     Ok(sql)
 }
 
-fn mariadb_opts(mariadb_cfg: &MariaDbConfig) -> Result<Opts> {
+pub fn mariadb_opts(mariadb_cfg: &MariaDbConfig) -> Result<Opts> {
     if let Some(url) = &mariadb_cfg.url {
         return Opts::from_url(url).with_context(|| "Failed to parse MariaDB URL in `mariadb.url`");
     }
