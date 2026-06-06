@@ -195,6 +195,7 @@ Supabase usage: provide the Supabase Postgres connection string via `POSTGRES_UR
 ### Snowflake → FalkorDB
 
 - Location: `Snowflake-to-FalkorDB/`
+- CDC Support: Native Change Data Capture via **Snowflake Streams** mapping stream inserts/updates and deletes directly to FalkorDB without custom watermark timestamps.
 - What it does: Migrates and continuously syncs structured data from Snowflake into FalkorDB (supports incremental watermarks, optional purge modes, and daemon mode).
 - Scaffolding: supports schema introspection and template generation from Snowflake metadata views, emitting fully-qualified source tables and best-effort FK-derived edge mappings with ambiguity notes.
 - Documentation: [Snowflake-to-FalkorDB/README.md](Snowflake-to-FalkorDB/README.md)

@@ -20,14 +20,39 @@ impl LogicalRow {
     }
 }
 
+pub struct FetchResult {
+    pub rows: Vec<LogicalRow>,
+    pub session: Option<snowflake_connector_rs::SnowflakeSession>,
+    pub stream_name: Option<String>,
+}
+
+impl FetchResult {
+    pub async fn commit(self) -> Result<()> {
+        if let (Some(session), Some(stream)) = (self.session, self.stream_name) {
+            let sql = format!(
+                "CREATE TEMPORARY TABLE _falkor_sink AS SELECT * FROM {} WHERE 0 = 1",
+                stream
+            );
+            session.query(sql.as_str()).await?;
+            session.query("COMMIT").await?;
+        }
+        Ok(())
+    }
+}
+
 /// Fetch all rows for a given mapping, from either a file or Snowflake.
 pub async fn fetch_rows_for_mapping(
     cfg: &Config,
     common: &CommonMappingFields,
     watermark: Option<&str>,
-) -> Result<Vec<LogicalRow>> {
+) -> Result<FetchResult> {
     if let Some(file) = &common.source.file {
-        return load_rows_from_file(file);
+        let rows = load_rows_from_file(file)?;
+        return Ok(FetchResult {
+            rows,
+            session: None,
+            stream_name: None,
+        });
     }
 
     if let Some(sf_cfg) = &cfg.snowflake {
@@ -44,9 +69,7 @@ async fn fetch_rows_from_snowflake(
     sf_cfg: &SnowflakeConfig,
     common: &CommonMappingFields,
     watermark: Option<&str>,
-) -> Result<Vec<LogicalRow>> {
-    let base_sql = build_sql(common, watermark)?;
-
+) -> Result<FetchResult> {
     let auth = if let Some(key_path) = &sf_cfg.private_key_path {
         // Key-pair auth: use private_key_path as encrypted PEM and password as key passphrase.
         let pem = std::fs::read_to_string(key_path)
@@ -79,31 +102,56 @@ async fn fetch_rows_from_snowflake(
     let client = SnowflakeClient::new(&sf_cfg.user, auth, config)?;
     let session = client.create_session().await?;
 
+    let mut stream_name = common.source.stream.clone();
+    // If we have a table and delta config, auto-create stream if not explicitly provided
+    if stream_name.is_none() && common.delta.is_some() {
+        if let Some(table) = &common.source.table {
+            let s_name = format!("{}_FALKOR_STREAM", table.replace(".", "_"));
+            let ddl = format!("CREATE STREAM IF NOT EXISTS {} ON TABLE {}", s_name, table);
+            session.query(ddl.as_str()).await?;
+            stream_name = Some(s_name);
+        }
+    }
+
+    let is_stream = stream_name.is_some();
+    let base_sql = build_sql_with_stream(common, watermark, stream_name.as_deref())?;
+
+    if is_stream {
+        session.query("BEGIN").await?;
+    }
+
     // If fetch_batch_size is set and we have a delta spec (incremental), use
     // simple LIMIT/OFFSET paging ordered by the updated_at column. This keeps
     // individual result sets bounded while preserving the same semantics as a
     // single large query.
-    if let (Some(batch_size), Some(delta)) = (sf_cfg.fetch_batch_size, &common.delta) {
-        if batch_size > 0 && common.source.select.is_none() {
-            return fetch_rows_from_snowflake_paged(
-                &session,
-                &base_sql,
-                &delta.updated_at_column,
-                batch_size,
-            )
-            .await;
-        }
-    }
+    let logical_rows =
+        if let (Some(batch_size), Some(delta)) = (sf_cfg.fetch_batch_size, &common.delta) {
+            if batch_size > 0 && common.source.select.is_none() {
+                fetch_rows_from_snowflake_paged(
+                    &session,
+                    &base_sql,
+                    &delta.updated_at_column,
+                    batch_size,
+                )
+                .await?
+            } else {
+                let rows = session.query(base_sql.as_str()).await?;
+                rows.into_iter()
+                    .map(snowflake_row_to_logical_row)
+                    .collect::<Result<Vec<_>>>()?
+            }
+        } else {
+            let rows = session.query(base_sql.as_str()).await?;
+            rows.into_iter()
+                .map(snowflake_row_to_logical_row)
+                .collect::<Result<Vec<_>>>()?
+        };
 
-    // Fallback: single query returning all rows.
-    let rows = session.query(base_sql.as_str()).await?;
-
-    let logical_rows = rows
-        .into_iter()
-        .map(snowflake_row_to_logical_row)
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(logical_rows)
+    Ok(FetchResult {
+        rows: logical_rows,
+        session: if is_stream { Some(session) } else { None },
+        stream_name,
+    })
 }
 
 /// Fetch rows using LIMIT/OFFSET paging.
@@ -152,7 +200,11 @@ async fn fetch_rows_from_snowflake_paged(
     Ok(out)
 }
 
-fn build_sql(common: &CommonMappingFields, watermark: Option<&str>) -> Result<String> {
+fn build_sql_with_stream(
+    common: &CommonMappingFields,
+    watermark: Option<&str>,
+    stream_override: Option<&str>,
+) -> Result<String> {
     // If the user provided a full SELECT, we respect it as-is. We don't attempt to inject
     // incremental predicates automatically here.
     if let Some(sel) = &common.source.select {
@@ -162,7 +214,7 @@ fn build_sql(common: &CommonMappingFields, watermark: Option<&str>) -> Result<St
     // If a Snowflake stream is configured, generate a simple SELECT against the
     // stream. Snowflake streams internally track changes, so we do not add
     // watermark predicates here; optional `where` is still honored.
-    if let Some(stream) = &common.source.stream {
+    if let Some(stream) = stream_override.or(common.source.stream.as_deref()) {
         let mut sql = format!("SELECT * FROM {}", stream);
         if let Some(w) = &common.source.r#where {
             sql.push_str(" WHERE ");
@@ -319,8 +371,59 @@ mod tests {
             delta: None,
         };
 
-        let rows = fetch_rows_from_snowflake(&sf_cfg, &common, None).await?;
-        assert!(!rows.is_empty());
+        let result = fetch_rows_from_snowflake(&sf_cfg, &common, None).await?;
+        assert!(!result.rows.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_sql_with_stream() -> Result<()> {
+        let common = CommonMappingFields {
+            name: "test".to_string(),
+            source: SourceConfig {
+                file: None,
+                table: Some("MY_TABLE".to_string()),
+                stream: None,
+                select: None,
+                r#where: None,
+            },
+            mode: Mode::Incremental,
+            delta: Some(crate::config::DeltaSpec {
+                updated_at_column: "METADATA$ROW_ID".to_string(),
+                deleted_flag_column: Some("METADATA$ACTION".to_string()),
+                deleted_flag_value: Some(serde_json::Value::from("DELETE")),
+                initial_full_load: None,
+            }),
+        };
+
+        // Test with stream override (auto-created stream)
+        let sql = build_sql_with_stream(&common, None, Some("MY_TABLE_FALKOR_STREAM"))?;
+        assert_eq!(sql, "SELECT * FROM MY_TABLE_FALKOR_STREAM");
+
+        // Test with where clause
+        let common_where = CommonMappingFields {
+            name: "test".to_string(),
+            source: SourceConfig {
+                file: None,
+                table: Some("MY_TABLE".to_string()),
+                stream: None,
+                select: None,
+                r#where: Some("ID > 10".to_string()),
+            },
+            mode: Mode::Incremental,
+            delta: Some(crate::config::DeltaSpec {
+                updated_at_column: "METADATA$ROW_ID".to_string(),
+                deleted_flag_column: Some("METADATA$ACTION".to_string()),
+                deleted_flag_value: Some(serde_json::Value::from("DELETE")),
+                initial_full_load: None,
+            }),
+        };
+        let sql_where = build_sql_with_stream(&common_where, None, Some("MY_TABLE_FALKOR_STREAM"))?;
+        assert_eq!(
+            sql_where,
+            "SELECT * FROM MY_TABLE_FALKOR_STREAM WHERE ID > 10"
+        );
+
         Ok(())
     }
 }

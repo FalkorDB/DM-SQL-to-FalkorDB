@@ -650,33 +650,12 @@ fn build_template_config(
 }
 
 fn infer_delta(table: &TableMetadata) -> Option<TemplateDelta> {
-    let colset: HashSet<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
-    let updated = [
-        "updated_at",
-        "updatedon",
-        "modified_at",
-        "last_updated_at",
-        "last_update",
-    ]
-    .iter()
-    .find(|c| colset.contains(**c))
-    .map(|s| (*s).to_string())?;
-    let deleted = ["is_deleted", "deleted", "is_active"]
-        .iter()
-        .find(|c| colset.contains(**c))
-        .map(|s| (*s).to_string());
-    let deleted_value = match deleted.as_deref() {
-        Some("is_active") => Some(serde_json::Value::from(0)),
-        Some(_) => Some(serde_json::Value::from(1)),
-        None => None,
-    };
     Some(TemplateDelta {
-        updated_at_column: updated,
-        deleted_flag_column: deleted,
-        deleted_flag_value: deleted_value,
+        updated_at_column: "METADATA$ROW_ID".to_string(),
+        deleted_flag_column: Some("METADATA$ACTION".to_string()),
+        deleted_flag_value: Some(serde_json::Value::from("DELETE")),
     })
 }
-
 fn choose_key_column(table: &TableMetadata) -> (String, Option<String>) {
     if table.primary_key.len() == 1 {
         return (table.primary_key[0].clone(), None);
