@@ -419,7 +419,10 @@ mod tests {
             }),
         };
         let sql_where = build_sql_with_stream(&common_where, None, Some("MY_TABLE_FALKOR_STREAM"))?;
-        assert_eq!(sql_where, "SELECT * FROM MY_TABLE_FALKOR_STREAM WHERE ID > 10");
+        assert_eq!(
+            sql_where,
+            "SELECT * FROM MY_TABLE_FALKOR_STREAM WHERE ID > 10"
+        );
 
         Ok(())
     }
