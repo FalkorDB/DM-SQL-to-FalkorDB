@@ -112,6 +112,7 @@ cargo run --release -- --config path/to/config.yaml
 ```
 
 Most configs reference environment variables for secrets (for example `$DATABRICKS_TOKEN`).
+
 ---
 
 <a id="tool-mariadb"></a>
@@ -188,6 +189,7 @@ cargo run --release -- --config example.config.yaml --daemon --interval-secs 60
 ```
 
 Supabase usage: provide the Supabase Postgres connection string via `POSTGRES_URL` with `sslmode=require` (or `sslmode=verify-full`).
+
 ---
 
 <a id="tool-snowflake"></a>
