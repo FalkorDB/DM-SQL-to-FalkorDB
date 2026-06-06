@@ -312,15 +312,15 @@ pub async fn run_once(
                 METRICS.inc_mapping_run(&node_cfg.common.name);
 
                 let watermark = watermarks.get(&node_cfg.common.name).map(|s| s.as_str());
-                let rows = fetch_rows_for_mapping(cfg, &node_cfg.common, watermark).await?;
-                METRICS.add_rows_fetched(rows.len() as u64);
-                METRICS.add_mapping_rows_fetched(&node_cfg.common.name, rows.len() as u64);
-                tracing::info!(mapping = %node_cfg.common.name, rows = rows.len(), "Fetched rows");
+                let mut result = fetch_rows_for_mapping(cfg, &node_cfg.common, watermark).await?;
+                METRICS.add_rows_fetched(result.rows.len() as u64);
+                METRICS.add_mapping_rows_fetched(&node_cfg.common.name, result.rows.len() as u64);
+                tracing::info!(mapping = %node_cfg.common.name, rows = result.rows.len(), "Fetched rows");
 
                 let (active_rows, deleted_rows) = if let Some(delta) = &node_cfg.common.delta {
-                    partition_by_deleted(&rows, delta)
+                    partition_by_deleted(&result.rows, delta)
                 } else {
-                    (rows.clone(), Vec::new())
+                    (result.rows.clone(), Vec::new())
                 };
 
                 let nodes: Vec<MappedNode> = map_rows_to_nodes(&active_rows, node_cfg)?;
@@ -349,11 +349,15 @@ pub async fn run_once(
                 }
 
                 if let Some(delta) = &node_cfg.common.delta {
-                    if let Some(max_ts) = compute_max_watermark(&rows, &delta.updated_at_column) {
+                    if let Some(max_ts) =
+                        compute_max_watermark(&result.rows, &delta.updated_at_column)
+                    {
                         watermarks.insert(node_cfg.common.name.clone(), max_ts.to_rfc3339());
                         save_watermarks(cfg, &watermarks)?;
                     }
                 }
+
+                result.commit().await?;
             }
             EntityMapping::Edge(edge_cfg) => {
                 tracing::info!(mapping = %edge_cfg.common.name, "Processing edge mapping");
@@ -392,15 +396,15 @@ pub async fn run_once(
                     .unwrap_or_else(|| to_node.labels.clone());
 
                 let watermark = watermarks.get(&edge_cfg.common.name).map(|s| s.as_str());
-                let rows = fetch_rows_for_mapping(cfg, &edge_cfg.common, watermark).await?;
-                METRICS.add_rows_fetched(rows.len() as u64);
-                METRICS.add_mapping_rows_fetched(&edge_cfg.common.name, rows.len() as u64);
-                tracing::info!(mapping = %edge_cfg.common.name, rows = rows.len(), "Fetched rows");
+                let mut result = fetch_rows_for_mapping(cfg, &edge_cfg.common, watermark).await?;
+                METRICS.add_rows_fetched(result.rows.len() as u64);
+                METRICS.add_mapping_rows_fetched(&edge_cfg.common.name, result.rows.len() as u64);
+                tracing::info!(mapping = %edge_cfg.common.name, rows = result.rows.len(), "Fetched rows");
 
                 let (active_rows, deleted_rows) = if let Some(delta) = &edge_cfg.common.delta {
-                    partition_by_deleted(&rows, delta)
+                    partition_by_deleted(&result.rows, delta)
                 } else {
-                    (rows.clone(), Vec::new())
+                    (result.rows.clone(), Vec::new())
                 };
 
                 let edges: Vec<MappedEdge> = map_rows_to_edges(&active_rows, edge_cfg)?;
@@ -440,11 +444,15 @@ pub async fn run_once(
                 }
 
                 if let Some(delta) = &edge_cfg.common.delta {
-                    if let Some(max_ts) = compute_max_watermark(&rows, &delta.updated_at_column) {
+                    if let Some(max_ts) =
+                        compute_max_watermark(&result.rows, &delta.updated_at_column)
+                    {
                         watermarks.insert(edge_cfg.common.name.clone(), max_ts.to_rfc3339());
                         save_watermarks(cfg, &watermarks)?;
                     }
                 }
+
+                result.commit().await?;
             }
         }
     }

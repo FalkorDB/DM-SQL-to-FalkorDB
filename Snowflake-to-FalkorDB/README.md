@@ -8,6 +8,7 @@ Rust-based CLI to migrate and continuously sync structured data from Snowflake i
 - JSON/YAML config describing mappings from tables/columns to nodes and edges
 - Batched, parameterized Cypher `UNWIND` + `MERGE` into FalkorDB
 - Schema scaffolding via `--introspect-schema` and `--generate-template` (with `--output` support)
+- Native Change Data Capture (CDC) support using Snowflake Streams for robust, zero-loss incremental syncs
 - Incremental sync using an `updated_at` watermark per mapping
 - Delete semantics via `deleted_flag` columns
 - Purge options (entire graph or selected mappings)
@@ -131,6 +132,27 @@ Key points:
 - If `source.select` is used, the query is taken as-is (you manage watermark predicates manually).
 
 Watermarks per mapping are stored in the `state` backend (currently `file`), keyed by mapping name. When `source.stream` is used, Snowflake manages change tracking internally for the stream; you can still use `delta.deleted_flag_column`/`deleted_flag_value` (for example, pointing at `METADATA$ACTION = 'DELETE'`) to let the loader translate stream events into node/edge deletes in FalkorDB.
+
+### Change Data Capture (CDC) via Snowflake Streams
+
+The tool natively supports robust CDC using Snowflake Streams. This ensures that every INSERT, UPDATE, and DELETE on your source tables is reliably captured and applied to the FalkorDB graph without relying on custom `updated_at` timestamps or manual triggers.
+
+When generating a template using `--generate-template`, the tool automatically provisions `delta` blocks optimized for Snowflake Streams:
+
+```yaml
+    delta:
+      updated_at_column: METADATA$ROW_ID
+      deleted_flag_column: METADATA$ACTION
+      deleted_flag_value: DELETE
+```
+
+When running a sync, if the tool detects `mode: incremental` and a `delta` block on a Snowflake table source, it automatically:
+1. Provisions a stream named `YOUR_TABLE_FALKOR_STREAM` if it does not already exist.
+2. Reads changes directly from the stream using a dedicated Snowflake transaction.
+3. Transforms and applies the graph updates.
+4. Commits the transaction and resets the stream offset, strictly avoiding data loss.
+
+If you wish to use an existing, manually managed stream, you can explicitly define `stream: YOUR_STREAM_NAME` under the `source` configuration instead of `table: YOUR_TABLE_NAME`.
 
 ## Running the tool
 
