@@ -59,13 +59,17 @@ pub struct ExecutionConfig {
     pub kubernetes: KubernetesExecutionConfig,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Health {
     pub ok: bool,
+    pub version: String,
 }
 
 pub async fn health() -> Json<Health> {
-    Json(Health { ok: true })
+    Json(Health { 
+        ok: true,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

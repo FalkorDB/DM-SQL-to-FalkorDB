@@ -172,6 +172,13 @@ export default function Layout() {
               </div>
 
               <div>
+                <div className="text-foreground/70">Version</div>
+                <div className="text-foreground">
+                  {version ? `v${version}` : 'Loading...'}
+                </div>
+              </div>
+
+              <div>
                 <div className="text-foreground/70">Support</div>
                 <a className="text-primary hover:underline" href="mailto:support@falkordb.com">
                   support@falkordb.com
