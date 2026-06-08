@@ -126,3 +126,7 @@ export const api = {
     },
   },
 }
+
+export async function getHealth(): Promise<{ ok: boolean; version: string }> {
+  return apiFetch('/api/health')
+}
