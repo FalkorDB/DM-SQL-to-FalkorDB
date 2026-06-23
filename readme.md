@@ -403,7 +403,7 @@ flowchart LR
         subgraph Runners
             R1[Runner Pod<br/>PostgreSQL Tool]
             R2[Runner Pod<br/>Snowflake Tool]
-            R3[Runner Pod<br/>MySQL Tool]
+            R3[Runner Pod<br/>Databricks Tool]
         end
         
         CP --> R1
@@ -417,18 +417,11 @@ flowchart LR
 
     R1 --> PG
     R2 --> SF
-    R3 --> MYSQL
+    R3 --> DB
 
     R1 --> FDB
     R2 --> FDB
     R3 --> FDB
-
-    PG -.-> BQ
-    PG -.-> CH
-    PG -.-> DB
-    PG -.-> MARIA
-    PG -.-> SP
-    PG -.-> SS
 ```
 
 **Component overview:**
@@ -436,8 +429,8 @@ flowchart LR
 | Component | Description |
 |-----------|-------------|
 | **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
-| **Runner Pods** | Short-lived or daemon pods spawned per ETL job. Each contains the multi-tool binary and executes one tool at a time based on the control plane's scheduling. |
-| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Runners connect directly to read source data. |
+| **Runner Pods** | Short-lived or daemon pods spawned per ETL job. Each runner pod contains all tool binaries and executes the appropriate tool based on the control plane's scheduling. |
+| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
 | **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
 
 **Data flow:**
