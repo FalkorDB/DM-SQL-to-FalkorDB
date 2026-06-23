@@ -357,6 +357,12 @@ This repository now includes a single-release, multi-tool deployment path:
 - `docker/build-images.sh <version>`: builds both images with the same version tag.
 - `deploy/helm/dm-sql-to-falkordb/`: Helm chart for one control-plane deployment that can run multiple tools.
 
+Runner execution model (Kubernetes backend):
+
+- A run is executed in a **single runner pod** using the shared multi-tool runner image.
+- That pod contains all supported migration binaries.
+- The control plane selects and invokes the relevant binary for the requested tool/run.
+
 Example image build:
 
 ```bash
@@ -401,29 +407,24 @@ flowchart LR
 
     subgraph Kubernetes Cluster
         CP[Control Plane<br/>Web UI + API<br/>Run Orchestration]
-        
-        subgraph Runners
-            R1[Runner Pod<br/>PostgreSQL Tool]
-            R2[Runner Pod<br/>Snowflake Tool]
-            R3[Runner Pod<br/>Databricks Tool]
-        end
-        
-        CP --> R1
-        CP --> R2
-        CP --> R3
+        RP[Runner Pod<br/>Multi-tool image<br/>Selected tool binary per run]
+        CP --> RP
     end
 
     subgraph FalkorDB
         FDB[FalkorDB<br/>Graph Database]
     end
 
-    R1 --> PG
-    R2 --> SF
-    R3 --> DB
-
-    R1 --> FDB
-    R2 --> FDB
-    R3 --> FDB
+    RP --> BQ
+    RP --> CH
+    RP --> DB
+    RP --> MARIA
+    RP --> MYSQL
+    RP --> PG
+    RP --> SF
+    RP --> SP
+    RP --> SS
+    RP --> FDB
 ```
 
 **Component overview:**
@@ -431,13 +432,13 @@ flowchart LR
 | Component | Description |
 |-----------|-------------|
 | **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
-| **Runner Pods** | Short-lived or daemon pods spawned per ETL job. Each runner pod contains all tool binaries and executes the appropriate tool based on the control plane's scheduling. |
+| **Runner Pod** | Run workload pod using the shared multi-tool runner image. It contains all tool binaries and executes the selected tool for the run. |
 | **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
 | **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
 
 **Data flow:**
 1. User configures ETL mappings via the control plane web UI.
-2. Control plane spawns a runner pod with the appropriate tool binary.
+2. Control plane starts the run in a runner pod and invokes the selected tool binary inside that same pod.
 3. Runner reads from the configured source database.
 4. Runner transforms and writes data to FalkorDB.
 5. Runner reports metrics and logs back to the control plane.
