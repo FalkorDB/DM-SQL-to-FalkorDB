@@ -381,6 +381,72 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb \
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
 
+### Deployment architecture
+
+```mermaid
+flowchart LR
+    subgraph Source Databases
+        BQ[BigQuery]
+        CH[ClickHouse]
+        DB[Databricks]
+        MARIA[MariaDB]
+        MYSQL[MySQL]
+        PG[PostgreSQL]
+        SF[Snowflake]
+        SP[Spark]
+        SS[SQL Server]
+    end
+
+    subgraph Kubernetes Cluster
+        CP[Control Plane<br/>Web UI + API<br/>Run Orchestration]
+        
+        subgraph Runners
+            R1[Runner Pod<br/>PostgreSQL Tool]
+            R2[Runner Pod<br/>Snowflake Tool]
+            R3[Runner Pod<br/>MySQL Tool]
+        end
+        
+        CP --> R1
+        CP --> R2
+        CP --> R3
+    end
+
+    subgraph FalkorDB
+        FDB[FalkorDB<br/>Graph Database]
+    end
+
+    R1 --> PG
+    R2 --> SF
+    R3 --> MYSQL
+
+    R1 --> FDB
+    R2 --> FDB
+    R3 --> FDB
+
+    PG -.-> BQ
+    PG -.-> CH
+    PG -.-> DB
+    PG -.-> MARIA
+    PG -.-> SP
+    PG -.-> SS
+```
+
+**Component overview:**
+
+| Component | Description |
+|-----------|-------------|
+| **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
+| **Runner Pods** | Short-lived or daemon pods spawned per ETL job. Each contains the multi-tool binary and executes one tool at a time based on the control plane's scheduling. |
+| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Runners connect directly to read source data. |
+| **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
+
+**Data flow:**
+1. User configures ETL mappings via the control plane web UI.
+2. Control plane spawns a runner pod with the appropriate tool binary.
+3. Runner reads from the configured source database.
+4. Runner transforms and writes data to FalkorDB.
+5. Runner reports metrics and logs back to the control plane.
+
 ### Kubernetes deployment path integration tests
 
 The control-plane server includes Kubernetes-path integration tests (with a mocked `kubectl` binary) in `control-plane/server/src/runs.rs`.
