@@ -16,8 +16,9 @@ It includes a control plane web tool to configure, initiate and track data migra
   - [Snowflake → FalkorDB](#tool-snowflake)
   - [Spark → FalkorDB](#tool-spark)
   - [SQL Server → FalkorDB](#tool-sqlserver)
-  - [Control plane (web UI + API)](#tool-control-plane)
+- [Control plane (web UI + API)](#tool-control-plane)
   - [Container + Kubernetes single-deployment model](#container--kubernetes-single-deployment-model)
+  - [Deployment architecture](#deployment-architecture)
 - [Metrics exposed by each tool](#metrics-exposed-by-each-tool)
 - [Common concepts](#common-concepts-applies-to-the-rust-loaders)
 - [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
@@ -381,6 +382,7 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb \
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
 
+<a id="deployment-architecture"></a>
 ### Deployment architecture
 
 ```mermaid
