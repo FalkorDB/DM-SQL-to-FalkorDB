@@ -16,8 +16,9 @@ It includes a control plane web tool to configure, initiate and track data migra
   - [Snowflake → FalkorDB](#tool-snowflake)
   - [Spark → FalkorDB](#tool-spark)
   - [SQL Server → FalkorDB](#tool-sqlserver)
-  - [Control plane (web UI + API)](#tool-control-plane)
+- [Control plane (web UI + API)](#tool-control-plane)
   - [Container + Kubernetes single-deployment model](#container--kubernetes-single-deployment-model)
+  - [Deployment architecture](#deployment-architecture)
 - [Metrics exposed by each tool](#metrics-exposed-by-each-tool)
 - [Common concepts](#common-concepts-applies-to-the-rust-loaders)
 - [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
@@ -356,6 +357,12 @@ This repository now includes a single-release, multi-tool deployment path:
 - `docker/build-images.sh <version>`: builds both images with the same version tag.
 - `deploy/helm/dm-sql-to-falkordb/`: Helm chart for one control-plane deployment that can run multiple tools.
 
+Runner execution model (Kubernetes backend):
+
+- A run is executed in a **single runner pod** using the shared multi-tool runner image.
+- That pod contains all supported migration binaries.
+- The control plane selects and invokes the relevant binary for the requested tool/run.
+
 Example image build:
 
 ```bash
@@ -380,6 +387,61 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb \
 ```
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
+
+<a id="deployment-architecture"></a>
+### Deployment architecture
+
+```mermaid
+flowchart LR
+    subgraph Source Databases
+        BQ[BigQuery]
+        CH[ClickHouse]
+        DB[Databricks]
+        MARIA[MariaDB]
+        MYSQL[MySQL]
+        PG[PostgreSQL]
+        SF[Snowflake]
+        SP[Spark]
+        SS[SQL Server]
+    end
+
+    subgraph Kubernetes Cluster
+        CP[Control Plane<br/>Web UI + API<br/>Run Orchestration]
+        RP[Runner Pod<br/>Multi-tool image<br/>Selected tool binary per run]
+        CP --> RP
+    end
+
+    subgraph FalkorDB
+        FDB[FalkorDB<br/>Graph Database]
+    end
+
+    RP --> BQ
+    RP --> CH
+    RP --> DB
+    RP --> MARIA
+    RP --> MYSQL
+    RP --> PG
+    RP --> SF
+    RP --> SP
+    RP --> SS
+    RP --> FDB
+```
+
+**Component overview:**
+
+| Component | Description |
+|-----------|-------------|
+| **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
+| **Runner Pod** | Run workload pod using the shared multi-tool runner image. It contains all tool binaries and executes the selected tool for the run. |
+| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
+| **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
+
+**Data flow:**
+1. User configures ETL mappings via the control plane web UI.
+2. Control plane starts the run in a runner pod and invokes the selected tool binary inside that same pod.
+3. Runner reads from the configured source database.
+4. Runner transforms and writes data to FalkorDB.
+5. Runner reports metrics and logs back to the control plane.
 
 ### Kubernetes deployment path integration tests
 

@@ -66,7 +66,7 @@ pub struct Health {
 }
 
 pub async fn health() -> Json<Health> {
-    Json(Health { 
+    Json(Health {
         ok: true,
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
