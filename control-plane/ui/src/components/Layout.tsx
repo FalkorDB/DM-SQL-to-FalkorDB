@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 
 import { applyTheme, getInitialTheme, type Theme } from '../lib/theme'
+import { getHealth } from '../lib/api'
 
 function NavItem({ to, label }: { to: string; label: string }) {
   return (
@@ -24,6 +25,7 @@ function NavItem({ to, label }: { to: string; label: string }) {
 export default function Layout() {
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [version, setVersion] = useState<string | null>(null)
   const repoUrl = 'https://github.com/FalkorDB/DM-SQL-to-FalkorDB'
   const licenseUrl =
     'https://github.com/FalkorDB/DM-SQL-to-FalkorDB/blob/main/Snowflake-to-FalkorDB/LICENSE'
@@ -31,6 +33,12 @@ export default function Layout() {
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
+
+  useEffect(() => {
+    getHealth()
+      .then((data) => setVersion(data.version))
+      .catch(() => setVersion('Unknown'))
+  }, [])
 
   useEffect(() => {
     if (!aboutOpen) return
