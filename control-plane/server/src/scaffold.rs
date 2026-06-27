@@ -1352,6 +1352,7 @@ fn supports_scaffold(tool_id: &str) -> bool {
     matches!(
         tool_id,
         "mysql"
+            | "oracle"
             | "mariadb"
             | "sqlserver"
             | "postgres"

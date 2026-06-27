@@ -12,6 +12,7 @@ It includes a control plane web tool to configure, initiate and track data migra
   - [Databricks → FalkorDB](#tool-databricks)
   - [MariaDB → FalkorDB](#tool-mariadb)
   - [MySQL → FalkorDB](#tool-mysql)
+  - [Oracle → FalkorDB](#tool-oracle)
   - [PostgreSQL → FalkorDB](#tool-postgresql)
   - [Snowflake → FalkorDB](#tool-snowflake)
   - [Spark → FalkorDB](#tool-spark)
@@ -28,7 +29,7 @@ It includes a control plane web tool to configure, initiate and track data migra
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (BigQuery / ClickHouse / Databricks / MariaDB / MySQL / PostgreSQL / Snowflake / Spark / SQL Server)
+- Network access to your source system (BigQuery / ClickHouse / Databricks / MariaDB / MySQL / Oracle / PostgreSQL / Snowflake / Spark / SQL Server)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -163,6 +164,29 @@ cargo run --release -- --config mysql.incremental.yaml
 
 # Continuous sync
 cargo run --release -- --config mysql.incremental.yaml --daemon --interval-secs 60
+```
+---
+<a id="tool-oracle"></a>
+
+### Oracle → FalkorDB
+
+- Location: `Oracle-to-FalkorDB/`
+- What it does: Migrates and continuously syncs data from Oracle into FalkorDB (supports full/incremental modes, LogMiner-based CDC mode, optional purge modes, and daemon mode).
+- Scaffolding: supports schema introspection and template generation from Oracle dictionary views with PK/UK/FK inference and qualified `schema.table` output.
+- Documentation: [Oracle-to-FalkorDB/readme.md](Oracle-to-FalkorDB/readme.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+
+Quick start (from the crate directory):
+
+```bash
+cd Oracle-to-FalkorDB
+cargo build --release
+
+# Single run
+cargo run --release -- --config oracle.incremental.yaml
+
+# CDC mode
+cargo run --release -- --config oracle.cdc.yaml
 ```
 ---
 
@@ -372,18 +396,7 @@ Example image build:
 Example Helm install (single control plane, PostgreSQL + Snowflake enabled together):
 
 ```bash
-helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb \
-  --namespace dm-sql --create-namespace \
-  --set global.version=v0.1.0 \
-  --set tools.enabled.postgres=true \
-  --set tools.enabled.snowflake=true \
-  --set tools.enabled.mysql=false \
-  --set tools.enabled.mariadb=false \
-  --set tools.enabled.clickhouse=false \
-  --set tools.enabled.bigquery=false \
-  --set tools.enabled.databricks=false \
-  --set tools.enabled.spark=false \
-  --set tools.enabled.sqlserver=false
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --create-namespace --set global.version=v0.1.0 --set tools.enabled.postgres=true --set tools.enabled.snowflake=true --set tools.enabled.oracle=false --set tools.enabled.mysql=false --set tools.enabled.mariadb=false --set tools.enabled.clickhouse=false --set tools.enabled.bigquery=false --set tools.enabled.databricks=false --set tools.enabled.spark=false --set tools.enabled.sqlserver=false
 ```
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
@@ -399,6 +412,7 @@ flowchart LR
         DB[Databricks]
         MARIA[MariaDB]
         MYSQL[MySQL]
+        ORA[Oracle]
         PG[PostgreSQL]
         SF[Snowflake]
         SP[Spark]
@@ -420,6 +434,7 @@ flowchart LR
     RP --> DB
     RP --> MARIA
     RP --> MYSQL
+    RP --> ORA
     RP --> PG
     RP --> SF
     RP --> SP
@@ -433,7 +448,7 @@ flowchart LR
 |-----------|-------------|
 | **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
 | **Runner Pod** | Run workload pod using the shared multi-tool runner image. It contains all tool binaries and executes the selected tool for the run. |
-| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
+| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, Oracle, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
 | **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
 
 **Data flow:**
@@ -605,6 +620,19 @@ Minimal example:
 - `mysql_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `mysql_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
+### Oracle → FalkorDB (`oracle_to_falkordb_`)
+
+- `oracle_to_falkordb_runs`
+- `oracle_to_falkordb_failed_runs`
+- `oracle_to_falkordb_rows_fetched`
+- `oracle_to_falkordb_rows_written`
+- `oracle_to_falkordb_rows_deleted`
+- `oracle_to_falkordb_mapping_runs{mapping="<name>"}`
+- `oracle_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `oracle_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `oracle_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `oracle_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
 ### PostgreSQL → FalkorDB (`postgres_to_falkordb_`)
 
 - `postgres_to_falkordb_runs`
@@ -679,6 +707,7 @@ Most SQL-style loaders in this repository support scaffold mode:
 - Databricks
 - MariaDB
 - MySQL
+- Oracle
 - PostgreSQL
 - Snowflake
 - Spark

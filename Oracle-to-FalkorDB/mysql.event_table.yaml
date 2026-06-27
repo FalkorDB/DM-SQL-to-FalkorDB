@@ -1,0 +1,35 @@
+mysql:
+  url: "$MYSQL_URL"
+  user: "root"
+  password: "$MYSQL_PASSWORD"
+  database: "events"
+  query_timeout_ms: 60000
+  fetch_batch_size: 2000
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "mysql_events_graph"
+  max_unwind_batch_size: 1000
+
+state:
+  backend: "file"
+  file_path: "state.events.json"
+
+mappings:
+  - type: node
+    name: users_events
+    source:
+      table: "events.user_events"
+    mode: incremental
+    delta:
+      updated_at_column: "event_time"
+      deleted_flag_column: "action"
+      deleted_flag_value: "DELETE"
+      initial_full_load: false
+    labels: ["User"]
+    key:
+      column: "user_id"
+      property: "user_id"
+    properties:
+      email: { column: "email" }
+      plan: { column: "plan" }

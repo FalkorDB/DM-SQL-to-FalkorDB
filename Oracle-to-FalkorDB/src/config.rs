@@ -1,0 +1,380 @@
+use std::{env, fs, path::Path};
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+/// Top-level config: multi-mapping, optional incremental/CDC modes, JSON or YAML.
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub oracle: Option<OracleConfig>,
+    pub falkordb: FalkorConfig,
+    pub state: Option<StateConfig>,
+    #[serde(default)]
+    pub mappings: Vec<EntityMapping>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct FalkorIndexSpec {
+    /// Node labels to index (combined as :LabelA:LabelB in FalkorDB index syntax).
+    pub labels: Vec<String>,
+    /// Graph property to index.
+    pub property: String,
+    /// Optional source table provenance for scaffold-generated templates.
+    #[serde(default)]
+    pub source_table: Option<String>,
+    /// Optional source columns provenance for scaffold-generated templates.
+    #[serde(default)]
+    pub source_columns: Vec<String>,
+}
+
+/// Oracle connection configuration.
+#[derive(Debug, Deserialize)]
+pub struct OracleConfig {
+    /// Easy connect / full connect string, e.g. "localhost:1521/FREEPDB1".
+    pub connect_string: Option<String>,
+    /// Discrete fields used when `connect_string` is not provided.
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub service_name: Option<String>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    /// Optional default schema for introspection and unqualified source tables.
+    pub schema: Option<String>,
+    #[serde(default)]
+    pub fetch_batch_size: Option<usize>,
+    #[serde(default)]
+    pub query_timeout_ms: Option<u64>,
+    /// Optional native Oracle CDC/LogMiner options.
+    #[serde(default)]
+    pub cdc: Option<OracleCdcConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OracleCdcConfig {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub poll_interval_secs: Option<u64>,
+    #[serde(default)]
+    pub max_scn_window: Option<u64>,
+    #[serde(default)]
+    pub start_scn: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FalkorConfig {
+    /// FalkorDB endpoint, e.g. "falkor://127.0.0.1:6379".
+    pub endpoint: String,
+    /// Target graph name.
+    pub graph: String,
+    /// Optional batch size override; default is 1000.
+    #[serde(default)]
+    pub max_unwind_batch_size: Option<usize>,
+    /// Optional explicit FalkorDB index definitions to apply before processing mappings.
+    #[serde(default)]
+    pub indexes: Vec<FalkorIndexSpec>,
+}
+
+/// Where to persist per-mapping watermarks for incremental loads.
+#[derive(Debug, Deserialize)]
+pub struct StateConfig {
+    pub backend: StateBackendKind,
+    /// For file backend: path to JSON/YAML file used to store mapping -> watermark.
+    pub file_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StateBackendKind {
+    File,
+    Falkordb,
+    None,
+}
+
+/// Source specification: supports either a local JSON file, an Oracle table,
+/// or a custom SELECT statement.
+#[derive(Debug, Deserialize)]
+pub struct SourceConfig {
+    /// Path to a JSON file containing an array of objects, each representing a row.
+    pub file: Option<String>,
+    /// Optional table name for Oracle-based sources.
+    pub table: Option<String>,
+    /// Optional full SELECT statement for Oracle-based sources.
+    pub select: Option<String>,
+    /// Optional WHERE clause to append when generating a SELECT from `table`.
+    #[serde(rename = "where")]
+    pub r#where: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum EntityMapping {
+    Node(NodeMappingConfig),
+    Edge(EdgeMappingConfig),
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    Full,
+    Incremental,
+    Cdc,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeltaSpec {
+    pub updated_at_column: String,
+    pub deleted_flag_column: Option<String>,
+    pub deleted_flag_value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub initial_full_load: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommonMappingFields {
+    /// Logical name of the mapping.
+    pub name: String,
+    /// Source definition for this mapping.
+    pub source: SourceConfig,
+    #[serde(default = "default_mode_full")]
+    pub mode: Mode,
+    pub delta: Option<DeltaSpec>,
+}
+
+fn default_mode_full() -> Mode {
+    Mode::Full
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NodeMappingConfig {
+    #[serde(flatten)]
+    pub common: CommonMappingFields,
+    /// Cypher labels to apply to created/merged nodes, e.g. ["Customer"].
+    pub labels: Vec<String>,
+    pub key: NodeKeySpec,
+    /// Map of graph property name -> column mapping.
+    pub properties: std::collections::HashMap<String, PropertySpec>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EdgeEndpointMatch {
+    pub node_mapping: String,
+    pub match_on: Vec<MatchOn>,
+    pub label_override: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MatchOn {
+    pub column: String,
+    pub property: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EdgeMappingConfig {
+    #[serde(flatten)]
+    pub common: CommonMappingFields,
+    pub relationship: String,
+    #[serde(default = "default_direction_out")]
+    pub direction: EdgeDirection,
+    pub from: EdgeEndpointMatch,
+    pub to: EdgeEndpointMatch,
+    pub key: Option<EdgeKeySpec>,
+    pub properties: std::collections::HashMap<String, PropertySpec>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeDirection {
+    Out,
+    In,
+}
+
+fn default_direction_out() -> EdgeDirection {
+    EdgeDirection::Out
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NodeKeySpec {
+    /// Column in the source row that contains the unique identifier (for MVP, single-column key).
+    pub column: String,
+    /// Property name on the node that stores this key.
+    pub property: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EdgeKeySpec {
+    pub column: String,
+    pub property: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PropertySpec {
+    /// Column name in the source row.
+    pub column: String,
+}
+
+impl Config {
+    /// Load configuration from a JSON or YAML file, based on file extension.
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path_ref = path.as_ref();
+        let contents = fs::read_to_string(path_ref)
+            .with_context(|| format!("Failed to read config file {}", path_ref.display()))?;
+
+        let ext = path_ref
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let mut cfg: Config = match ext.as_str() {
+            "yaml" | "yml" => serde_yaml::from_str(&contents).with_context(|| {
+                format!("Failed to parse YAML config from {}", path_ref.display())
+            })?,
+            _ => serde_json::from_str(&contents).with_context(|| {
+                format!("Failed to parse JSON config from {}", path_ref.display())
+            })?,
+        };
+
+        if let Some(oracle_cfg) = cfg.oracle.as_mut() {
+            resolve_env_ref(&mut oracle_cfg.connect_string, "oracle.connect_string")?;
+            resolve_env_ref(&mut oracle_cfg.host, "oracle.host")?;
+            resolve_env_ref(&mut oracle_cfg.service_name, "oracle.service_name")?;
+            resolve_env_ref(&mut oracle_cfg.user, "oracle.user")?;
+            resolve_env_ref(&mut oracle_cfg.password, "oracle.password")?;
+            resolve_env_ref(&mut oracle_cfg.schema, "oracle.schema")?;
+        }
+        resolve_required_env_ref(&mut cfg.falkordb.endpoint, "falkordb.endpoint")?;
+
+        Ok(cfg)
+    }
+}
+
+fn resolve_env_ref(value: &mut Option<String>, field_name: &str) -> Result<()> {
+    let Some(current) = value.as_ref() else {
+        return Ok(());
+    };
+    let Some(env_name) = current.strip_prefix('$') else {
+        return Ok(());
+    };
+
+    let resolved = env::var(env_name).with_context(|| {
+        format!(
+            "Environment variable {} referenced by {} is not set",
+            env_name, field_name
+        )
+    })?;
+    *value = Some(resolved);
+    Ok(())
+}
+
+fn resolve_required_env_ref(value: &mut String, field_name: &str) -> Result<()> {
+    let Some(env_name) = value.strip_prefix('$') else {
+        return Ok(());
+    };
+
+    let resolved = env::var(env_name).with_context(|| {
+        format!(
+            "Environment variable {} referenced by {} is not set",
+            env_name, field_name
+        )
+    })?;
+    *value = resolved;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use std::{
+        env, fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn write_temp_file(contents: &str, ext: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        path.push(format!(
+            "oracle_to_falkordb_config_test_{}_{}.{}",
+            std::process::id(),
+            nonce,
+            ext
+        ));
+        fs::write(&path, contents).expect("failed to write temp config file");
+        path
+    }
+
+    #[test]
+    fn config_from_yaml_resolves_env_connection_string_and_password() -> Result<()> {
+        let conn_var = "ORACLE_TEST_CONN";
+        let pw_var = "ORACLE_TEST_PASSWORD";
+        env::set_var(conn_var, "localhost:1521/FREEPDB1");
+        env::set_var(pw_var, "super-secret");
+
+        let yaml = r#"
+            oracle:
+              connect_string: "$ORACLE_TEST_CONN"
+              user: "app"
+              password: "$ORACLE_TEST_PASSWORD"
+            falkordb:
+              endpoint: "falkor://127.0.0.1:6379"
+              graph: "test"
+            mappings: []
+        "#;
+
+        let path = write_temp_file(yaml, "yaml");
+        let cfg = Config::from_file(&path)?;
+        let oracle = cfg.oracle.expect("expected oracle config");
+        assert_eq!(
+            oracle.connect_string.as_deref(),
+            Some("localhost:1521/FREEPDB1")
+        );
+        assert_eq!(oracle.password.as_deref(), Some("super-secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn config_from_json_parses_basic_fields() -> Result<()> {
+        let json = r#"
+            {
+              "oracle": null,
+              "falkordb": {
+                "endpoint": "falkor://localhost:6379",
+                "graph": "test_graph"
+              },
+              "state": null,
+              "mappings": []
+            }
+        "#;
+
+        let path = write_temp_file(json, "json");
+        let cfg = Config::from_file(&path)?;
+        assert!(cfg.oracle.is_none());
+        assert_eq!(cfg.falkordb.endpoint, "falkor://localhost:6379");
+        assert_eq!(cfg.falkordb.graph, "test_graph");
+        Ok(())
+    }
+
+    #[test]
+    fn config_from_yaml_resolves_falkordb_endpoint_env() -> Result<()> {
+        let endpoint_var = "FALKORDB_TEST_ENDPOINT";
+        env::set_var(endpoint_var, "falkor://127.0.0.1:6379");
+
+        let yaml = r#"
+            oracle: null
+            falkordb:
+              endpoint: "$FALKORDB_TEST_ENDPOINT"
+              graph: "test"
+            mappings: []
+        "#;
+
+        let path = write_temp_file(yaml, "yaml");
+        let cfg = Config::from_file(&path)?;
+        assert_eq!(cfg.falkordb.endpoint, "falkor://127.0.0.1:6379");
+        Ok(())
+    }
+}

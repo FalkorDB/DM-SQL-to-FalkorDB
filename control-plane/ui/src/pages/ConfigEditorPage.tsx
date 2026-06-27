@@ -234,7 +234,7 @@ function inferSyntax(text: string): Exclude<ConfigSyntax, 'auto'> {
 }
 
 function supportsScaffold(toolId: string): boolean {
-  return ['mysql', 'mariadb', 'sqlserver', 'postgres', 'snowflake', 'clickhouse', 'databricks', 'bigquery', 'spark'].includes(toolId)
+  return ['mysql', 'oracle', 'mariadb', 'sqlserver', 'postgres', 'snowflake', 'clickhouse', 'databricks', 'bigquery', 'spark'].includes(toolId)
 }
 
 export default function ConfigEditorPage() {
