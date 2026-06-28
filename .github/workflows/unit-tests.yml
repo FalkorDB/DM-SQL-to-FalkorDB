@@ -35,6 +35,7 @@ jobs:
             Databricks-to-FalkorDB/databricks-to-falkordb 
             MariaDB-to-FalkorDB 
             MySQL-to-FalkorDB 
+            Oracle-to-FalkorDB 
             PostgreSQL-to-FalkorDB/postgres-to-falkordb 
             SQLServer-to-FalkorDB 
             Snowflake-to-FalkorDB 

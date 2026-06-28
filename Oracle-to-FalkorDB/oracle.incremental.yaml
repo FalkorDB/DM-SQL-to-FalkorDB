@@ -1,0 +1,65 @@
+oracle:
+  connect_string: "$ORACLE_CONNECT_STRING"
+  user: "$ORACLE_USER"
+  password: "$ORACLE_PASSWORD"
+  schema: "APP"
+  query_timeout_ms: 60000
+  fetch_batch_size: 5000
+falkordb:
+  endpoint: "$FALKORDB_ENDPOINT"
+  graph: "oracle_incremental_graph"
+  max_unwind_batch_size: 1000
+state:
+  backend: "file"
+  file_path: "state.incremental.json"
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "APP.CUSTOMERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      initial_full_load: true
+    labels: ["Customer"]
+    key:
+      column: "CUSTOMER_ID"
+      property: "id"
+    properties:
+      email: { column: "EMAIL" }
+      country: { column: "COUNTRY" }
+  - type: node
+    name: orders
+    source:
+      table: "APP.ORDERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      initial_full_load: true
+    labels: ["Order"]
+    key:
+      column: "ORDER_ID"
+      property: "id"
+    properties:
+      total: { column: "TOTAL_AMOUNT" }
+  - type: edge
+    name: customer_orders
+    source:
+      table: "APP.ORDERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      initial_full_load: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "CUSTOMER_ID"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "ORDER_ID"
+          property: "id"
+    properties: {}

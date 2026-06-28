@@ -1,0 +1,70 @@
+oracle:
+  connect_string: "$ORACLE_CONNECT_STRING"
+  user: "$ORACLE_USER"
+  password: "$ORACLE_PASSWORD"
+  schema: "APP"
+  fetch_batch_size: 10000
+  query_timeout_ms: 60000
+falkordb:
+  endpoint: "$FALKORDB_ENDPOINT"
+  graph: "oracle_sample_graph"
+  max_unwind_batch_size: 1000
+state:
+  backend: "file"
+  file_path: "oracle_sample_state.json"
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "APP.CUSTOMERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      deleted_flag_column: "IS_DELETED"
+      deleted_flag_value: 1
+    labels: ["Customer"]
+    key:
+      column: "CUSTOMER_ID"
+      property: "id"
+    properties:
+      first_name: { column: "FIRST_NAME" }
+      last_name: { column: "LAST_NAME" }
+      email: { column: "EMAIL" }
+  - type: node
+    name: orders
+    source:
+      table: "APP.ORDERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      deleted_flag_column: "IS_DELETED"
+      deleted_flag_value: 1
+    labels: ["Order"]
+    key:
+      column: "ORDER_ID"
+      property: "id"
+    properties:
+      status: { column: "STATUS" }
+      total_amount: { column: "TOTAL_AMOUNT" }
+  - type: edge
+    name: customer_placed_order
+    source:
+      table: "APP.ORDERS"
+    mode: incremental
+    delta:
+      updated_at_column: "UPDATED_AT"
+      deleted_flag_column: "IS_DELETED"
+      deleted_flag_value: 1
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "CUSTOMER_ID"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "ORDER_ID"
+          property: "id"
+    properties: {}

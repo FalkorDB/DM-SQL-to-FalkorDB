@@ -17,6 +17,7 @@ tools:
     databricks: true
     mariadb: true
     mysql: true
+    oracle: true
     postgres: true
     snowflake: true
     spark: true

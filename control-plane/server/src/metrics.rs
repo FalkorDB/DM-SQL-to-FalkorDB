@@ -360,6 +360,7 @@ fn default_metrics_port(tool_id: &str) -> u16 {
         "postgres" => 9993,
         "databricks" => 9994,
         "spark" => 9997,
+        "oracle" => 9998,
         _ => 9999,
     }
 }

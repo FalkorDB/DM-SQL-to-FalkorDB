@@ -9,6 +9,7 @@ RUN cargo build --manifest-path BigQuery-to-FalkorDB/bigquery-to-falkordb/Cargo.
     && cargo build --manifest-path Databricks-to-FalkorDB/databricks-to-falkordb/Cargo.toml --release \
     && cargo build --manifest-path MariaDB-to-FalkorDB/Cargo.toml --release \
     && cargo build --manifest-path MySQL-to-FalkorDB/Cargo.toml --release \
+    && cargo build --manifest-path Oracle-to-FalkorDB/Cargo.toml --release \
     && cargo build --manifest-path PostgreSQL-to-FalkorDB/postgres-to-falkordb/Cargo.toml --release \
     && cargo build --manifest-path SQLServer-to-FalkorDB/Cargo.toml --release \
     && cargo build --manifest-path Snowflake-to-FalkorDB/Cargo.toml --release \
@@ -29,6 +30,7 @@ COPY --from=builder /src/ClickHouse-to-FalkorDB/target/release/clickhouse_to_fal
 COPY --from=builder /src/Databricks-to-FalkorDB/databricks-to-falkordb/target/release/databricks-to-falkordb /opt/falkordb/bin/
 COPY --from=builder /src/MariaDB-to-FalkorDB/target/release/mariadb_to_falkordb /opt/falkordb/bin/
 COPY --from=builder /src/MySQL-to-FalkorDB/target/release/mysql_to_falkordb /opt/falkordb/bin/
+COPY --from=builder /src/Oracle-to-FalkorDB/target/release/oracle_to_falkordb /opt/falkordb/bin/
 COPY --from=builder /src/PostgreSQL-to-FalkorDB/postgres-to-falkordb/target/release/postgres-to-falkordb /opt/falkordb/bin/
 COPY --from=builder /src/SQLServer-to-FalkorDB/target/release/sqlserver_to_falkordb /opt/falkordb/bin/
 COPY --from=builder /src/Snowflake-to-FalkorDB/target/release/snowflake_to_falkordb /opt/falkordb/bin/

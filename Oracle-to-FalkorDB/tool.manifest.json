@@ -1,0 +1,32 @@
+{
+  "id": "oracle",
+  "displayName": "Oracle → FalkorDB",
+  "description": "Migrate and continuously sync structured data from Oracle into FalkorDB using declarative mappings.",
+  "workingDir": "Oracle-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Oracle-to-FalkorDB/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "Oracle-to-FalkorDB/oracle.cdc.yaml",
+      "Oracle-to-FalkorDB/oracle.incremental.yaml",
+      "Oracle-to-FalkorDB/oracle_sample_to_falkordb.yaml",
+      "Oracle-to-FalkorDB/example.file.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9998/",
+    "format": "prometheus_text",
+    "metricPrefix": "oracle_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}

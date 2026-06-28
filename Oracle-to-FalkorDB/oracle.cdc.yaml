@@ -1,0 +1,29 @@
+oracle:
+  connect_string: "$ORACLE_CONNECT_STRING"
+  user: "$ORACLE_USER"
+  password: "$ORACLE_PASSWORD"
+  schema: "APP"
+  cdc:
+    enabled: true
+    poll_interval_secs: 5
+    max_scn_window: 50000
+falkordb:
+  endpoint: "$FALKORDB_ENDPOINT"
+  graph: "oracle_cdc_graph"
+  max_unwind_batch_size: 1000
+state:
+  backend: "file"
+  file_path: "state.cdc.json"
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "APP.CUSTOMERS"
+    mode: cdc
+    labels: ["Customer"]
+    key:
+      column: "CUSTOMER_ID"
+      property: "id"
+    properties:
+      email: { column: "EMAIL" }
+      country: { column: "COUNTRY" }
