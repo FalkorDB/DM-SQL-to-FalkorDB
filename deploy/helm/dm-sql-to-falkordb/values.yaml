@@ -1,13 +1,13 @@
-global:
-  version: "latest"
-
 images:
+  defaultTag: ""
   controlPlane:
-    repository: ghcr.io/falkordb/dm-sql-to-falkordb-control-plane
+    registry: ghcr.io
+    repository: falkordb/dm-sql-to-falkordb-control-plane
     tag: ""
     pullPolicy: IfNotPresent
   runner:
-    repository: ghcr.io/falkordb/dm-sql-to-falkordb-runner
+    registry: ghcr.io
+    repository: falkordb/dm-sql-to-falkordb-runner
     tag: ""
 
 tools:

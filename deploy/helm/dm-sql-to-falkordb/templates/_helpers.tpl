@@ -27,13 +27,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "dm-sql-to-falkordb.controlPlaneImage" -}}
-{{- $tag := default .Values.global.version .Values.images.controlPlane.tag -}}
-{{- printf "%s:%s" .Values.images.controlPlane.repository $tag -}}
+{{- $global := .Values.global | default dict -}}
+{{- $registry := default .Values.images.controlPlane.registry $global.imageRegistry -}}
+{{- $repository := .Values.images.controlPlane.repository -}}
+{{- $tag := .Values.images.controlPlane.tag | default .Values.images.defaultTag | default $global.version | default (printf "v%s" .Chart.AppVersion) -}}
+{{- if $registry -}}
+{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- else -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "dm-sql-to-falkordb.runnerImage" -}}
-{{- $tag := default .Values.global.version .Values.images.runner.tag -}}
-{{- printf "%s:%s" .Values.images.runner.repository $tag -}}
+{{- $global := .Values.global | default dict -}}
+{{- $registry := default .Values.images.runner.registry $global.imageRegistry -}}
+{{- $repository := .Values.images.runner.repository -}}
+{{- $tag := .Values.images.runner.tag | default .Values.images.defaultTag | default $global.version | default (printf "v%s" .Chart.AppVersion) -}}
+{{- if $registry -}}
+{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- else -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "dm-sql-to-falkordb.serviceAccountName" -}}
