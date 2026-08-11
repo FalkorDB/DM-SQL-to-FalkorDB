@@ -397,7 +397,7 @@ Example image build:
 Example Helm install (single control plane, PostgreSQL + Snowflake enabled together):
 
 ```bash
-helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --create-namespace --set global.version=v0.1.0 --set tools.enabled.postgres=true --set tools.enabled.snowflake=true --set tools.enabled.oracle=false --set tools.enabled.mysql=false --set tools.enabled.mariadb=false --set tools.enabled.clickhouse=false --set tools.enabled.bigquery=false --set tools.enabled.databricks=false --set tools.enabled.spark=false --set tools.enabled.sqlserver=false
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --create-namespace --set images.defaultTag=v0.1.0 --set tools.enabled.postgres=true --set tools.enabled.snowflake=true --set tools.enabled.oracle=false --set tools.enabled.mysql=false --set tools.enabled.mariadb=false --set tools.enabled.clickhouse=false --set tools.enabled.bigquery=false --set tools.enabled.databricks=false --set tools.enabled.spark=false --set tools.enabled.sqlserver=false
 ```
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
@@ -490,7 +490,7 @@ Optional real-cluster smoke setup (manual validation):
 
 1. Build images with one version tag using `./docker/build-images.sh <version> <registry>`.
 2. Push images to a registry reachable by your cluster.
-3. Install Helm chart from `deploy/helm/dm-sql-to-falkordb` with `--set global.version=<version>`.
+3. Install Helm chart from `deploy/helm/dm-sql-to-falkordb` with `--set images.defaultTag=<version>`.
 4. Enable desired tool set via `--set tools.enabled.<tool>=true/false`.
 
 ### Control plane metrics option (`tool.manifest.json`)
