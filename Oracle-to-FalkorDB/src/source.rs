@@ -1,6 +1,7 @@
 use std::fs;
 
 use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
 use oracle::Connection;
 use serde_json::{Map as JsonMap, Number, Value as JsonValue};
 
@@ -97,8 +98,11 @@ pub fn build_sql(common: &CommonMappingFields, watermark: Option<&str>) -> Resul
         if let (Mode::Incremental, Some(delta), Some(wm)) =
             (common.mode, common.delta.as_ref(), watermark)
         {
-            let escaped = escape_sql_literal(wm);
-            predicates.push(format!("{} > '{}'", delta.updated_at_column, escaped));
+            let normalized = normalize_watermark_for_oracle(wm)?;
+            predicates.push(format!(
+                "{} > TO_TIMESTAMP('{}', 'YYYY-MM-DD\"T\"HH24:MI:SS.FF6')",
+                delta.updated_at_column, normalized
+            ));
         }
 
         if predicates.is_empty() {
@@ -275,6 +279,25 @@ fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+/// Reformat an RFC3339 watermark string (as produced by `compute_max_watermark`) into a
+/// fixed-precision (6 fractional digits), timezone-naive literal that reliably round-trips
+/// through Oracle's `TO_TIMESTAMP` with a fixed format mask. This avoids two pitfalls:
+/// - Relying on Oracle's session `NLS_TIMESTAMP_FORMAT` to implicitly parse ISO-8601 strings
+///   (which don't understand the `T` separator by default, and would otherwise raise
+///   `ORA-01843: An invalid month was specified`).
+/// - Using `TO_TIMESTAMP_TZ`/comparing against a plain `TIMESTAMP` column, which implicitly
+///   converts the naive column value using the *client/session* time zone (defaulting to the
+///   connecting machine's OS time zone for OCI-based clients). Since `UPDATED_AT` columns and
+///   watermarks are both treated as naive UTC wall-clock values throughout this tool, comparing
+///   two timezone-naive `TIMESTAMP`s sidesteps that skew entirely.
+fn normalize_watermark_for_oracle(watermark: &str) -> Result<String> {
+    let dt = DateTime::parse_from_rfc3339(watermark)
+        .with_context(|| format!("Invalid watermark timestamp: {}", watermark))?;
+    let dt_utc = dt.with_timezone(&Utc);
+    let formatted = dt_utc.format("%Y-%m-%dT%H:%M:%S%.6f").to_string();
+    Ok(escape_sql_literal(&formatted))
+}
+
 fn load_rows_from_file(path: &str) -> Result<Vec<LogicalRow>> {
     let contents =
         fs::read_to_string(path).with_context(|| format!("Failed to read input file {}", path))?;
@@ -331,7 +354,9 @@ mod tests {
         let sql = build_sql(&mapping, Some("2024-01-01T00:00:00Z"))?;
         assert!(sql.contains("SELECT * FROM APP.CUSTOMERS"));
         assert!(sql.contains("active = 1"));
-        assert!(sql.contains("updated_at > '2024-01-01T00:00:00Z'"));
+        assert!(sql.contains(
+            "updated_at > TO_TIMESTAMP('2024-01-01T00:00:00.000000', 'YYYY-MM-DD\"T\"HH24:MI:SS.FF6')"
+        ));
         Ok(())
     }
 
