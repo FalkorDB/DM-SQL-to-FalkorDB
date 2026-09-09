@@ -19,6 +19,25 @@ From this directory:
 cargo build --release
 ```
 
+## Runtime requirement: Oracle Instant Client
+This loader uses the `oracle` crate (backed by [ODPI-C](https://oracle.github.io/odpi/doc/installation.html)), which
+dynamically loads Oracle's native client library (`libclntsh.so` / `libclntsh.dylib`) at **runtime** via `dlopen`.
+No Oracle software is required to *build* the binary, but it must be present wherever the binary *runs*, otherwise
+you'll see:
+```
+DPI-1047: Cannot locate a 64-bit Oracle Client library: "libclntsh.so: cannot open shared object file..."
+```
+
+- The official `dm-sql-to-falkordb-runner` container image (used by the control plane's Kubernetes execution
+  backend) bundles Oracle Instant Client Basic Lite already — no extra setup needed there.
+- For local/bare-metal runs, install [Oracle Instant Client](https://www.oracle.com/database/technologies/instant-client/downloads.html)
+  (Basic or Basic Light) yourself:
+  - Linux: unzip it under `/opt/oracle`, install the `libaio`/`libaio1` OS package, then either register it via
+    `ldconfig` or set `LD_LIBRARY_PATH` to the Instant Client directory. See the
+    [ODPI-C Linux install guide](https://oracle.github.io/odpi/doc/installation.html#linuxinstall).
+  - macOS: install via the [official DMG packages](https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html)
+    and ensure `libclntsh.dylib` is discoverable (e.g. under `~/lib`, since `cargo run` resets `DYLD_LIBRARY_PATH`).
+
 ## Configuration
 Config can be YAML or JSON.
 

@@ -16,10 +16,35 @@ RUN cargo build --manifest-path BigQuery-to-FalkorDB/bigquery-to-falkordb/Cargo.
     && cargo build --manifest-path Spark-to-FalkorDB/spark-to-falkordb/Cargo.toml --release
 
 FROM debian:bookworm-slim AS runtime
+ARG TARGETARCH
+
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates libaio1 unzip wget \
     && rm -rf /var/lib/apt/lists/*
+
+# The Oracle-to-FalkorDB loader uses the `oracle` crate (ODPI-C), which dynamically loads
+# libclntsh.so from Oracle Instant Client at runtime. Without it, Oracle mappings fail with
+# "DPI-1047: Cannot locate a 64-bit Oracle Client library". See:
+# https://oracle.github.io/odpi/doc/installation.html#linux
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) IC_ZIP="instantclient-basiclite-linuxx64.zip" ;; \
+      arm64) IC_ZIP="instantclient-basiclite-linux-arm64.zip" ;; \
+      *) echo "Unsupported architecture for Oracle Instant Client: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /opt/oracle; \
+    cd /opt/oracle; \
+    wget -q "https://download.oracle.com/otn_software/linux/instantclient/${IC_ZIP}"; \
+    unzip -q "${IC_ZIP}"; \
+    rm -f "${IC_ZIP}"; \
+    IC_DIR="$(find /opt/oracle -maxdepth 1 -type d -name 'instantclient_*' | head -n1)"; \
+    test -n "${IC_DIR}"; \
+    ln -s "${IC_DIR}" /opt/oracle/instantclient; \
+    echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf; \
+    ldconfig; \
+    ldconfig -p | grep -q libclntsh
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient
 
 RUN useradd --create-home --uid 10002 --shell /usr/sbin/nologin runner
 RUN mkdir -p /opt/falkordb/bin /workspace \
