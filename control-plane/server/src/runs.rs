@@ -60,6 +60,7 @@ struct KubernetesRuntime {
     shared_pvc_name: Option<String>,
     env_secret_name: Option<String>,
     env_configmap_name: Option<String>,
+    pod_fs_group: Option<i64>,
     binary_path: String,
 }
 
@@ -563,6 +564,7 @@ fn build_kubernetes_runtime(
         shared_pvc_name: state.execution.kubernetes.shared_pvc_name.clone(),
         env_secret_name: state.execution.kubernetes.env_secret_name.clone(),
         env_configmap_name: state.execution.kubernetes.env_configmap_name.clone(),
+        pod_fs_group: state.execution.kubernetes.pod_fs_group,
         binary_path,
     })
 }
@@ -672,6 +674,17 @@ fn build_kubernetes_workload_manifest(
             spec.insert(
                 "serviceAccountName".to_string(),
                 serde_json::Value::String(service_account.clone()),
+            );
+        }
+    }
+
+    if let Some(fs_group) = runtime.pod_fs_group {
+        if let Some(spec) = pod_spec.as_object_mut() {
+            spec.insert(
+                "securityContext".to_string(),
+                json!({
+                    "fsGroup": fs_group
+                }),
             );
         }
     }
@@ -1676,6 +1689,7 @@ mod tests {
                     env_configmap_name: Some("tool-env-config".to_string()),
                     kubectl_bin: kubectl_path.to_string_lossy().to_string(),
                     binary_dir: "/opt/falkordb/bin".to_string(),
+                    pod_fs_group: Some(10002),
                 },
             },
             api_key: None,

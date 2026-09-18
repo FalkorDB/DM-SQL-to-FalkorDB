@@ -19,10 +19,18 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "dm-sql-to-falkordb.serviceAccountName" . }}
+      {{- with .Values.controlPlane.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: control-plane
           image: {{ include "dm-sql-to-falkordb.controlPlaneImage" . }}
           imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          {{- with .Values.controlPlane.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: 3003
@@ -56,6 +64,10 @@ spec:
             {{- if .Values.kubernetesRunner.sharedPvc.enabled }}
             - name: CONTROL_PLANE_K8S_SHARED_PVC
               value: {{ include "dm-sql-to-falkordb.runnerSharedPvcName" . | quote }}
+            {{- end }}
+            {{- if .Values.kubernetesRunner.podSecurityContext.fsGroup }}
+            - name: CONTROL_PLANE_K8S_POD_FS_GROUP
+              value: {{ .Values.kubernetesRunner.podSecurityContext.fsGroup | quote }}
             {{- end }}
             {{- if .Values.kubernetesRunner.envSecretName }}
             - name: CONTROL_PLANE_K8S_ENV_SECRET
