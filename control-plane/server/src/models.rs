@@ -51,6 +51,10 @@ pub struct KubernetesExecutionConfig {
     pub env_configmap_name: Option<String>,
     pub kubectl_bin: String,
     pub binary_dir: String,
+    /// Optional pod-level `securityContext.fsGroup` applied to runner workloads so that
+    /// non-root runner containers can write to mounted PersistentVolumeClaims (e.g. the
+    /// shared workspace PVC).
+    pub pod_fs_group: Option<i64>,
 }
 
 #[derive(Debug, Clone)]

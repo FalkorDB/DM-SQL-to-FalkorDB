@@ -37,6 +37,15 @@ controlPlane:
   serviceAccount:
     create: true
     name: ""
+  # Pod-level securityContext for the control-plane Deployment. The control-plane image
+  # runs as the non-root `appuser` (uid 10001, see control-plane/Dockerfile). Setting
+  # fsGroup ensures mounted PersistentVolumeClaims (e.g. the control-plane data PVC) are
+  # writable by that user, avoiding "Permission Denied" errors on first mount.
+  podSecurityContext:
+    fsGroup: 10001
+  # Container-level securityContext for the control-plane container. Empty by default;
+  # override to add e.g. runAsNonRoot, readOnlyRootFilesystem, etc.
+  securityContext: {}
 
 service:
   type: ClusterIP
@@ -68,6 +77,12 @@ kubernetesRunner:
   envSecretName: ""
   envConfigMapName: ""
   binaryDir: /opt/falkordb/bin
+  # Pod-level securityContext applied by the control-plane to the runner Jobs/Deployments
+  # it creates dynamically. The runner image runs as the non-root `runner` user (uid
+  # 10002, see docker/runner.Dockerfile). Setting fsGroup ensures the shared workspace
+  # PVC (below) is writable by that user.
+  podSecurityContext:
+    fsGroup: 10002
   sharedPvc:
     enabled: true
     existingClaim: ""

@@ -90,6 +90,11 @@ struct Cli {
         default_value = "/opt/falkordb/bin"
     )]
     k8s_binary_dir: String,
+
+    /// Optional pod-level securityContext.fsGroup applied to runner workloads so that
+    /// non-root runner containers can write to mounted PersistentVolumeClaims.
+    #[arg(long, env = "CONTROL_PLANE_K8S_POD_FS_GROUP")]
+    k8s_pod_fs_group: Option<i64>,
 }
 
 #[tokio::main]
@@ -147,6 +152,7 @@ async fn main() -> anyhow::Result<()> {
                 env_configmap_name: cli.k8s_env_configmap,
                 kubectl_bin: cli.k8s_kubectl_bin,
                 binary_dir: cli.k8s_binary_dir,
+                pod_fs_group: cli.k8s_pod_fs_group,
             },
         },
         api_key: std::env::var("CONTROL_PLANE_API_KEY")
