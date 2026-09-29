@@ -24,6 +24,7 @@ It includes a control plane web tool to configure, initiate and track data migra
 - [Common concepts](#common-concepts-applies-to-the-rust-loaders)
 - [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
 - [FalkorDB connection](#falkordb-connection)
+- [License](#license)
 
 ## Prerequisites
 
@@ -757,3 +758,7 @@ Each tool’s config describes the FalkorDB endpoint and graph name. Typical end
 - `falkor://127.0.0.1:6379`
 
 See each tool’s README for the exact configuration schema.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
