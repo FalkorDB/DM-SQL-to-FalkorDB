@@ -17,6 +17,26 @@ Rust CLI tool to migrate and continuously sync data from Parquet files (local fi
 - Daemon mode (`--daemon --interval-secs <N>`)
 - Prometheus-style metrics endpoint
 
+## Quick start (local demo)
+
+`parquet_sample_to_falkordb.yaml` + `sample_data/customers/customers.parquet`
+is a working end-to-end demo: a small Snappy-compressed Parquet file with 5
+customer rows, loaded into FalkorDB with no external services required.
+
+Run from this directory (`Parquet-to-FalkorDB/`):
+
+```bash
+cargo build --release --manifest-path parquet-to-falkordb/Cargo.toml
+
+cargo run --release --manifest-path parquet-to-falkordb/Cargo.toml -- \
+  --config parquet_sample_to_falkordb.yaml
+```
+
+This writes 5 `Customer` nodes into the `parquet_graph` graph at
+`falkor://127.0.0.1:6379`. See [Running](#running) below for daemon/scaffold/
+purge variants, and [Configuration](#configuration) for the full config
+reference including S3/GCS/Azure object storage.
+
 ## Build
 
 From the inner crate directory:
@@ -147,8 +167,8 @@ Arrow `RecordBatch` → JSON conversion and OpenDAL operator building live in
 
 ## Tuning guidance and known limitations
 
-Validated locally (FalkorDB + local filesystem and Hive-partitioned datasets;
-see repository Phase 4 validation notes):
+Validated locally against FalkorDB with local filesystem and Hive-partitioned
+datasets:
 
 - **Memory characteristics**: `parquet.batch_size` only controls the internal
   Arrow record-batch size used while decoding a single Parquet file. All rows
@@ -182,4 +202,6 @@ see repository Phase 4 validation notes):
 
 ## Example config
 
-See `parquet_sample_to_falkordb.yaml` in this directory.
+See `parquet_sample_to_falkordb.yaml` and `sample_data/customers/` in this
+directory for the full working local demo (see
+[Quick start](#quick-start-local-demo) above).

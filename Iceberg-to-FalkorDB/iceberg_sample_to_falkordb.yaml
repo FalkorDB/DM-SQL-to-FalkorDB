@@ -1,32 +1,32 @@
-# Example config: load Iceberg tables into FalkorDB
+# Working local demo: load an Iceberg table (SQL/sqlite catalog + local
+# file:// warehouse) into FalkorDB.
 #
-# Usage (from Iceberg-to-FalkorDB/iceberg-to-falkordb):
-#   export ICEBERG_CATALOG_URI="https://catalog.example.com"
-#   export ICEBERG_TOKEN="..."
+# Usage (from Iceberg-to-FalkorDB/):
+#   pip install -r sample_data/requirements.txt
+#   eval "$(python3 sample_data/generate_sample_table.py)"   # creates the table, exports catalog env vars
+#   cd iceberg-to-falkordb
 #   cargo run --release -- --config ../iceberg_sample_to_falkordb.yaml
 #
 # Catalog types: rest | glue | sql
-# For local/dev, use type: sql with a sqlite URI and file:// warehouse:
+# For a managed/production REST catalog, swap the block below for:
 #   iceberg:
 #     catalog:
-#       type: sql
-#       uri: "sqlite:///tmp/iceberg_catalog.db"
-#       warehouse: "file:///tmp/iceberg_warehouse"
-#       bind_style: qmark
+#       type: rest
+#       uri: "$ICEBERG_CATALOG_URI"
+#       warehouse: "s3://my-bucket/warehouse"
+#       properties:
+#         token: "$ICEBERG_TOKEN"
+#     storage_properties:
+#       s3.region: "us-east-1"
+#       s3.access-key-id: "$AWS_ACCESS_KEY_ID"
+#       s3.secret-access-key: "$AWS_SECRET_ACCESS_KEY"
 
 iceberg:
   catalog:
-    type: rest
-    uri: "$ICEBERG_CATALOG_URI"
-    warehouse: "s3://my-bucket/warehouse"
-    properties:
-      # REST catalog bearer token (optional; some catalogs use credential instead)
-      token: "$ICEBERG_TOKEN"
-  # Optional storage properties forwarded to OpenDAL FileIO
-  storage_properties:
-    s3.region: "us-east-1"
-    s3.access-key-id: "$AWS_ACCESS_KEY_ID"
-    s3.secret-access-key: "$AWS_SECRET_ACCESS_KEY"
+    type: sql
+    uri: "$ICEBERG_SAMPLE_CATALOG_URI"
+    warehouse: "$ICEBERG_SAMPLE_WAREHOUSE"
+    bind_style: qmark
   # Optional default namespace for --introspect-schema / --generate-template
   default_namespace: "sales"
 
