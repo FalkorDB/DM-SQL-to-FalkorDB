@@ -145,6 +145,41 @@ Metric prefix: `parquet_to_falkordb_`
 Arrow `RecordBatch` → JSON conversion and OpenDAL operator building live in
 `common/arrow-to-falkordb-bridge`, also consumed by Iceberg-to-FalkorDB.
 
+## Tuning guidance and known limitations
+
+Validated locally (FalkorDB + local filesystem and Hive-partitioned datasets;
+see repository Phase 4 validation notes):
+
+- **Memory characteristics**: `parquet.batch_size` only controls the internal
+  Arrow record-batch size used while decoding a single Parquet file. All rows
+  from every file matched by a mapping are fetched into memory before any are
+  written to FalkorDB (writes are then chunked by `falkordb.max_unwind_batch_size`).
+  Memory usage therefore scales with the total size of the largest single
+  mapping's matched dataset, not with `batch_size`. For very large lakes,
+  split a dataset across multiple mappings (e.g. per-partition `source.path`)
+  to bound memory per run.
+- **Compression codecs**: the connector depends on `parquet`'s `arrow`/`async`
+  features plus explicit `snap`/`brotli`/`flate2-rust_backend`/`lz4`/`zstd`
+  features, since the `parquet` crate ships with zero codec support otherwise.
+  This covers all common real-world writers (PyArrow, Spark, Hive, Trino
+  default to Snappy).
+- **File-cursor mode and local filesystem sources**: `file_cursor: true`
+  relies on each listed object's last-modified timestamp. With the pinned
+  `opendal` version, the local `fs` service does **not** populate
+  last-modified metadata during directory listing (a long-standing upstream
+  limitation; fixed in newer `opendal` releases). As a result, file-cursor
+  mode on local directories never advances its cursor and effectively
+  re-reads all files on every run (safe/idempotent, but not truly
+  incremental). S3/GCS/Azure backends are unaffected, since their list APIs
+  always return last-modified timestamps. For local-filesystem incremental
+  loads, prefer column-watermark mode (`delta.updated_at_column`) instead.
+- **Credentials**: `object_store` fields (`access_key_id`, `secret_access_key`,
+  `account_key`, `sas_token`, etc.) are plain strings resolved from `$VAR`
+  env references at startup. No code path currently logs the full config via
+  `{:?}`, but the config structs derive `Debug` without redaction (consistent
+  with other connectors in this repo), so avoid adding debug-logging of raw
+  config values in future changes.
+
 ## Example config
 
 See `parquet_sample_to_falkordb.yaml` in this directory.

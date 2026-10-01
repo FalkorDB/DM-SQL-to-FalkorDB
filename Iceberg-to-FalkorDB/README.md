@@ -126,6 +126,37 @@ See `ADR-0001-source-access.md` for the Phase 0 feasibility spike and the bindin
 3. Catalogs: REST + Glue + SQL; HMS deferred.
 4. Storage: `OpenDalResolvingStorageFactory` directly.
 
+## Tuning guidance and known limitations
+
+Validated locally against a SQL/sqlite catalog with a `file://` warehouse,
+including append, merge-on-read delete, and watermark-update scenarios (see
+repository Phase 4 validation notes):
+
+- **Memory characteristics**: per ADR-0001, `fetch_rows_for_mapping` collects
+  the entire `table.scan().to_arrow()` result (all Arrow batches for the
+  mapped table) into memory before converting and writing to FalkorDB; the
+  column-watermark filter is then applied client-side. Memory usage scales
+  with the full size of each mapped table, not just the incremental delta.
+  For very large tables, consider `source.columns` projection to reduce
+  per-row width, or splitting a table into multiple narrower mappings.
+- **Arrow version bridging overhead**: because `iceberg` 0.10.1 emits Arrow 58
+  `RecordBatch`es and the shared bridge crate expects Arrow 60, batches are
+  round-tripped through Arrow IPC (`iceberg_batch_to_logical_rows`). This adds
+  CPU/serialization overhead proportional to scanned data volume; revisit once
+  upstream `iceberg` aligns on a newer Arrow version.
+- **SQL catalog name must match the connector's load name**: when testing
+  locally against a SQL/sqlite catalog created via `pyiceberg` or another
+  client, the catalog name used (e.g. `SqlCatalog("sql", ...)`) must match the
+  name this connector passes internally (`"sql"`), since `iceberg-catalog-sql`
+  scopes table rows by catalog name. A mismatch surfaces as `TableNotFound`
+  even though the table exists in the catalog database.
+- **Credentials**: catalog `properties` (e.g. REST bearer tokens) and
+  `storage_properties` (e.g. S3 keys) are plain strings resolved from `$VAR`
+  env references at startup. No code path currently logs the full config via
+  `{:?}`, but the config structs derive `Debug` without redaction (consistent
+  with other connectors in this repo), so avoid adding debug-logging of raw
+  config values in future changes.
+
 ## License
 
 Apache-2.0 (same as this repository).
