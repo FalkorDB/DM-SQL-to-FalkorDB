@@ -1,0 +1,47 @@
+[package]
+name = "iceberg-to-falkordb"
+version = "0.1.0"
+edition = "2021"
+description = "Load and incrementally sync Apache Iceberg tables into FalkorDB"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+falkordb = { version = "0.9.0", features = ["tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+hyper = { version = "0.14", features = ["server", "http1", "tcp"] }
+once_cell = "1.19"
+futures = "0.3"
+async-trait = "0.1"
+
+# Apache Iceberg
+iceberg = "0.10.1"
+iceberg-catalog-rest = "0.10.1"
+iceberg-catalog-glue = "0.10.1"
+iceberg-catalog-sql = "0.10.1"
+iceberg-storage-opendal = { version = "0.10.1", features = ["opendal-all"] }
+# sqlx features required by iceberg-catalog-sql at runtime (crate enables only `any`)
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "any", "sqlite", "postgres", "migrate"] }
+
+# Shared Arrow→LogicalRow conversion (arrow 60). Iceberg 0.10.1 emits arrow 58
+# RecordBatches; we bridge via IPC (arrow-ipc 58 write → arrow-ipc 60 read).
+arrow-to-falkordb-bridge = { path = "../../common/arrow-to-falkordb-bridge" }
+arrow-array = "58"
+arrow-schema = "58"
+arrow-ipc = { version = "58", default-features = false }
+arrow-ipc60 = { package = "arrow-ipc", version = "60", default-features = false }
+arrow60 = { package = "arrow", version = "60", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[profile.release]
+opt-level = 3

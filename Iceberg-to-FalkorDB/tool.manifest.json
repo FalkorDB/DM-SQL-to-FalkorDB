@@ -1,0 +1,29 @@
+{
+  "id": "iceberg",
+  "displayName": "Iceberg → FalkorDB",
+  "description": "Load and incrementally sync Apache Iceberg tables into FalkorDB using declarative mappings.",
+  "workingDir": "Iceberg-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Iceberg-to-FalkorDB/iceberg-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "Iceberg-to-FalkorDB/iceberg_sample_to_falkordb.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9995/",
+    "format": "prometheus_text",
+    "metricPrefix": "iceberg_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}
