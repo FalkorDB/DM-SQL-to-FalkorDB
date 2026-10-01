@@ -1,0 +1,56 @@
+parquet:
+  # Local directory, single file, or object-store URI (s3://, gs://, az://).
+  path: "./sample_data/customers/"
+  glob: "**/*.parquet"
+  hive_partitioning: true
+  batch_size: 65536
+  # object_store:
+  #   provider: s3
+  #   region: "us-east-1"
+  #   access_key_id: "$AWS_ACCESS_KEY_ID"
+  #   secret_access_key: "$AWS_SECRET_ACCESS_KEY"
+  #   # endpoint: "http://localhost:9000"   # MinIO
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "parquet_graph"
+  max_unwind_batch_size: 1000
+  indexes: []
+
+state:
+  backend: "file"
+  file_path: "parquet_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      # Inherits parquet.path when omitted; override per mapping if needed.
+      path: "./sample_data/customers/"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      # deleted_flag_column: "is_deleted"
+      # deleted_flag_value: 1
+      initial_full_load: true
+    labels: ["Customer"]
+    key:
+      column: "id"
+      property: "id"
+    properties:
+      email: { column: "email" }
+      country: { column: "country" }
+
+  # Append-only lake with no watermark column: file-level last-modified cursor.
+  # - type: node
+  #   name: events
+  #   source:
+  #     path: "s3://my-bucket/lake/events/"
+  #   mode: incremental
+  #   file_cursor: true
+  #   labels: ["Event"]
+  #   key:
+  #     column: "event_id"
+  #     property: "id"
+  #   properties:
+  #     payload: { column: "payload" }

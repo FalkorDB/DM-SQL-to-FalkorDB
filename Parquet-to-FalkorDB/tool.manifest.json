@@ -1,0 +1,29 @@
+{
+  "id": "parquet",
+  "displayName": "Parquet → FalkorDB",
+  "description": "Load and incrementally sync Parquet datasets (local filesystem or object storage) into FalkorDB using declarative mappings.",
+  "workingDir": "Parquet-to-FalkorDB",
+  "executable": {
+    "type": "cargo",
+    "manifestPath": "Parquet-to-FalkorDB/parquet-to-falkordb/Cargo.toml",
+    "release": true
+  },
+  "capabilities": {
+    "supports_daemon": true,
+    "supports_purge_graph": true,
+    "supports_purge_mapping": true,
+    "supports_metrics": true
+  },
+  "config": {
+    "fileExtensions": [".yaml", ".yml", ".json"],
+    "examples": [
+      "Parquet-to-FalkorDB/parquet_sample_to_falkordb.yaml"
+    ]
+  },
+  "metrics": {
+    "endpoint": "http://127.0.0.1:9996/",
+    "format": "prometheus_text",
+    "metricPrefix": "parquet_to_falkordb_",
+    "mappingLabel": "mapping"
+  }
+}
