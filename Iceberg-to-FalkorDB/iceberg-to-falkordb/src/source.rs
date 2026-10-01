@@ -18,10 +18,10 @@ use iceberg_catalog_sql::{
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use crate::arrow_bridge::record_batch_to_logical_rows;
-use crate::config::{
-    CatalogConfig, CatalogType, CommonMappingFields, Config, IcebergConfig, Mode,
-};
+use arrow_array::RecordBatch;
+use arrow_to_falkordb_bridge::{record_batch_to_logical_rows, LogicalRow as BridgeRow};
+
+use crate::config::{CatalogConfig, CatalogType, CommonMappingFields, Config, IcebergConfig, Mode};
 
 /// Logical row abstraction used by the mapping layer.
 #[derive(Debug, Clone)]
@@ -33,6 +33,42 @@ impl LogicalRow {
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         self.values.get(key)
     }
+
+    pub fn from_bridge(row: BridgeRow) -> Self {
+        Self { values: row }
+    }
+}
+
+/// Convert an Iceberg (arrow 58) RecordBatch to LogicalRows via the shared
+/// arrow-to-falkordb-bridge (arrow 60), bridging versions through Arrow IPC.
+fn iceberg_batch_to_logical_rows(batch: &RecordBatch) -> anyhow::Result<Vec<LogicalRow>> {
+    use std::io::Cursor;
+
+    let mut buf = Vec::new();
+    {
+        let mut writer =
+            arrow_ipc::writer::StreamWriter::try_new(&mut buf, batch.schema().as_ref())
+                .map_err(|e| anyhow::anyhow!("arrow58 IPC write failed: {e}"))?;
+        writer
+            .write(batch)
+            .map_err(|e| anyhow::anyhow!("arrow58 IPC write batch failed: {e}"))?;
+        writer
+            .finish()
+            .map_err(|e| anyhow::anyhow!("arrow58 IPC finish failed: {e}"))?;
+    }
+
+    let cursor = Cursor::new(buf);
+    let mut reader = arrow_ipc60::reader::StreamReader::try_new(cursor, None)
+        .map_err(|e| anyhow::anyhow!("arrow60 IPC read failed: {e}"))?;
+
+    let mut rows = Vec::new();
+    for next in reader.by_ref() {
+        let batch60 = next.map_err(|e| anyhow::anyhow!("arrow60 IPC batch failed: {e}"))?;
+        let bridge_rows = record_batch_to_logical_rows(&batch60)
+            .map_err(|e| anyhow::anyhow!("bridge conversion failed: {e}"))?;
+        rows.extend(bridge_rows.into_iter().map(LogicalRow::from_bridge));
+    }
+    Ok(rows)
 }
 
 /// Open an Iceberg catalog from config.
@@ -103,13 +139,13 @@ fn build_catalog_props(
             if let Some(wh) = &catalog.warehouse {
                 props.insert(SQL_CATALOG_PROP_WAREHOUSE.to_string(), wh.clone());
             }
-let bind = catalog
+            let bind = catalog
                 .bind_style
                 .as_deref()
                 .unwrap_or("qmark")
                 .to_ascii_lowercase();
             // Property values match SqlBindStyle Display / FromStr (see iceberg-catalog-sql).
-let style = if bind == "dollar" || bind == "$" || bind == "postgres" {
+            let style = if bind == "dollar" || bind == "$" || bind == "postgres" {
                 SqlBindStyle::DollarNumeric.to_string()
             } else {
                 SqlBindStyle::QMark.to_string()
@@ -155,11 +191,12 @@ pub async fn fetch_rows_for_mapping(
         .as_ref()
         .ok_or_else(|| anyhow!("No iceberg config provided for mapping '{}'", common.name))?;
 
-    let table_name = common
-        .source
-        .table
-        .as_ref()
-        .ok_or_else(|| anyhow!("Mapping '{}' requires source.table or source.file", common.name))?;
+    let table_name = common.source.table.as_ref().ok_or_else(|| {
+        anyhow!(
+            "Mapping '{}' requires source.table or source.file",
+            common.name
+        )
+    })?;
 
     let catalog = open_catalog(ice).await?;
     let ident = parse_table_ident(table_name)?;
@@ -196,7 +233,7 @@ pub async fn fetch_rows_for_mapping(
 
     let mut rows = Vec::new();
     for batch in &batches {
-        let mut batch_rows = record_batch_to_logical_rows(batch)
+        let mut batch_rows = iceberg_batch_to_logical_rows(batch)
             .with_context(|| format!("Failed to convert Arrow batch for '{table_name}'"))?;
         rows.append(&mut batch_rows);
     }
@@ -289,11 +326,7 @@ fn load_rows_from_file(path: &str) -> Result<Vec<LogicalRow>> {
     for (idx, v) in arr.into_iter().enumerate() {
         match v {
             JsonValue::Object(map) => rows.push(LogicalRow { values: map }),
-            _ => {
-                return Err(anyhow!(
-                    "Row at index {idx} in {path} is not a JSON object"
-                ))
-            }
+            _ => return Err(anyhow!("Row at index {idx} in {path} is not a JSON object")),
         }
     }
 

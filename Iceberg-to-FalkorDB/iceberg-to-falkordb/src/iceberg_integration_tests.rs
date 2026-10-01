@@ -15,7 +15,6 @@ use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use sqlx::migrate::MigrateDatabase;
 use tempfile::TempDir;
 
-use crate::arrow_bridge::record_batch_to_logical_rows;
 use crate::config::{CatalogConfig, CatalogType, IcebergConfig};
 use crate::source::{open_catalog, parse_table_ident};
 
@@ -63,7 +62,7 @@ fn test_schema() -> Schema {
 
 #[tokio::test]
 async fn sql_catalog_create_and_scan_roundtrip() -> Result<()> {
-let tmp = TempDir::new()?;
+    let tmp = TempDir::new()?;
     let (catalog, catalog_db, warehouse) = setup_catalog(&tmp).await?;
 
     let ns = NamespaceIdent::new("sales".into());
@@ -98,11 +97,8 @@ let tmp = TempDir::new()?;
         .try_collect()
         .await
         .map_err(|e| anyhow::anyhow!("collect: {e}"))?;
-    let mut rows = Vec::new();
-    for b in &batches {
-        rows.extend(record_batch_to_logical_rows(b)?);
-    }
-    assert!(rows.is_empty());
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(total_rows, 0);
 
     let ice = IcebergConfig {
         catalog: CatalogConfig {
@@ -171,10 +167,7 @@ async fn rest_catalog_live_smoke() -> Result<()> {
         .try_collect()
         .await
         .map_err(|e| anyhow::anyhow!("collect: {e}"))?;
-    let mut total = 0usize;
-    for b in &batches {
-        total += record_batch_to_logical_rows(b)?.len();
-    }
+    let total: usize = batches.iter().map(|b| b.num_rows()).sum();
     eprintln!("REST smoke scan complete: {total} rows");
     Ok(())
 }

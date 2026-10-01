@@ -503,7 +503,7 @@ mod tests {
             Err(_) => return Ok(()),
         };
         let graph = std::env::var("FALKORDB_GRAPH")
-.unwrap_or_else(|_| "iceberg_to_falkordb_test".to_string());
+            .unwrap_or_else(|_| "iceberg_to_falkordb_test".to_string());
 
         let cfg = FalkorConfig {
             endpoint,

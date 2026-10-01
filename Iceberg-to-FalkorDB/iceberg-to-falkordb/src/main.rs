@@ -1,4 +1,3 @@
-mod arrow_bridge;
 mod config;
 mod cypher;
 mod mapping;
@@ -55,11 +54,7 @@ struct Cli {
     interval_secs: u64,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(
-        long,
-        env = "ICEBERG_TO_FALKORDB_METRICS_PORT",
-        default_value_t = 9995
-    )]
+    #[arg(long, env = "ICEBERG_TO_FALKORDB_METRICS_PORT", default_value_t = 9995)]
     metrics_port: u16,
 
     /// Introspect Iceberg table schema and print a normalized summary.

@@ -245,10 +245,7 @@ impl Config {
             resolve_env_ref(&mut ice.catalog.warehouse, "iceberg.catalog.warehouse")?;
             resolve_env_ref(&mut ice.catalog.catalog_id, "iceberg.catalog.catalog_id")?;
             resolve_env_map(&mut ice.catalog.properties, "iceberg.catalog.properties")?;
-            resolve_env_map(
-                &mut ice.storage_properties,
-                "iceberg.storage_properties",
-            )?;
+            resolve_env_map(&mut ice.storage_properties, "iceberg.storage_properties")?;
         }
 
         Ok(cfg)

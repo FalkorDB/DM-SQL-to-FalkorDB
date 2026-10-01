@@ -1,40 +1,11 @@
 use anyhow::{anyhow, Result};
+use arrow_to_falkordb_bridge::normalise_property_value;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use crate::config::{EdgeMappingConfig, MatchOn, NodeMappingConfig};
 use crate::sink::MappedNode;
 use crate::sink_async::MappedEdge;
 use crate::source::LogicalRow;
-
-/// Neo4j/FalkorDB only allow property values that are primitives or arrays of primitives.
-/// Normalise incoming JSON so that complex values (objects, nested arrays) are stringified.
-fn normalise_property_value(value: JsonValue) -> JsonValue {
-    fn is_primitive(v: &JsonValue) -> bool {
-        matches!(
-            v,
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_)
-        )
-    }
-
-    match value {
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => value,
-        JsonValue::Array(arr) => {
-            if arr.iter().all(is_primitive) {
-                JsonValue::Array(arr)
-            } else {
-                // Fallback: store entire JSON array as a string property
-                let json = serde_json::to_string(&JsonValue::Array(arr))
-                    .unwrap_or_else(|_| "[]".to_string());
-                JsonValue::String(json)
-            }
-        }
-        JsonValue::Object(_) => {
-            // Fallback: store object as its JSON string representation
-            let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
-            JsonValue::String(json)
-        }
-    }
-}
 
 /// Map tabular rows to FalkorDB nodes according to a NodeMappingConfig.
 pub fn map_rows_to_nodes(

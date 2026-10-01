@@ -234,7 +234,7 @@ async fn load_table_metadata(
         });
     }
 
-let mut partition_fields = Vec::new();
+    let mut partition_fields = Vec::new();
     let spec = meta.default_partition_spec();
     for pf in spec.fields() {
         partition_fields.push(PartitionFieldMetadata {
@@ -247,11 +247,7 @@ let mut partition_fields = Vec::new();
     let primary_key_guess = guess_key_columns(&columns);
 
     let ns: Vec<String> = ident.namespace().clone().to_vec();
-    let identifier = format!(
-        "{}.{}",
-        ns.join("."),
-        ident.name()
-    );
+    let identifier = format!("{}.{}", ns.join("."), ident.name());
 
     Ok(TableMetadata {
         identifier,
@@ -266,10 +262,11 @@ let mut partition_fields = Vec::new();
 fn guess_key_columns(columns: &[ColumnMetadata]) -> Vec<String> {
     let preferred = ["id", "pk", "uuid", "guid", "key"];
     for pref in preferred {
-        if let Some(c) = columns
-            .iter()
-            .find(|c| c.name.eq_ignore_ascii_case(pref) || c.name.to_ascii_lowercase().ends_with("_id") && c.name.eq_ignore_ascii_case(&format!("{pref}")))
-        {
+        if let Some(c) = columns.iter().find(|c| {
+            c.name.eq_ignore_ascii_case(pref)
+                || c.name.to_ascii_lowercase().ends_with("_id")
+                    && c.name.eq_ignore_ascii_case(&format!("{pref}"))
+        }) {
             return vec![c.name.clone()];
         }
     }
@@ -371,17 +368,13 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
 
     for table in &schema.tables {
         let label = to_label(&table.name);
-        let key_col = table
-            .primary_key_guess
-            .first()
-            .cloned()
-            .unwrap_or_else(|| {
-                table
-                    .columns
-                    .first()
-                    .map(|c| c.name.clone())
-                    .unwrap_or_else(|| "id".to_string())
-            });
+        let key_col = table.primary_key_guess.first().cloned().unwrap_or_else(|| {
+            table
+                .columns
+                .first()
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "id".to_string())
+        });
 
         let mut properties = BTreeMap::new();
         for col in &table.columns {
@@ -396,14 +389,13 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
             );
         }
 
-        let delta = guess_updated_at_column(&table.columns).map(|updated_at_column| {
-            TemplateDelta {
+        let delta =
+            guess_updated_at_column(&table.columns).map(|updated_at_column| TemplateDelta {
                 updated_at_column,
                 deleted_flag_column: guess_deleted_flag(&table.columns),
                 deleted_flag_value: guess_deleted_flag(&table.columns)
                     .map(|_| serde_json::Value::Bool(true)),
-            }
-        });
+            });
 
         let mode = if delta.is_some() {
             "incremental".to_string()

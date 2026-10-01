@@ -721,10 +721,10 @@ mod tests {
             Err(_) => return Ok(()),
         };
         let graph = std::env::var("FALKORDB_GRAPH")
-.unwrap_or_else(|_| "iceberg_to_falkordb_load_test".to_string());
+            .unwrap_or_else(|_| "iceberg_to_falkordb_load_test".to_string());
 
         let tmp_dir = std::env::temp_dir();
-let input_path = tmp_dir.join("iceberg_to_falkordb_nodes.json");
+        let input_path = tmp_dir.join("iceberg_to_falkordb_nodes.json");
         std::fs::write(
             &input_path,
             r#"[
@@ -733,7 +733,7 @@ let input_path = tmp_dir.join("iceberg_to_falkordb_nodes.json");
             ]"#,
         )?;
 
-let source = SourceConfig {
+        let source = SourceConfig {
             file: Some(input_path.to_string_lossy().to_string()),
             table: None,
             columns: vec![],
@@ -766,7 +766,7 @@ let source = SourceConfig {
             properties,
         };
 
-let cfg = Config {
+        let cfg = Config {
             iceberg: None,
             falkordb: FalkorConfig {
                 endpoint,

@@ -30,10 +30,14 @@ iceberg-storage-opendal = { version = "0.10.1", features = ["opendal-all"] }
 # sqlx features required by iceberg-catalog-sql at runtime (crate enables only `any`)
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "any", "sqlite", "postgres", "migrate"] }
 
-# Arrow (version aligned with iceberg 0.10.1 transitively; pin loosely)
+# Shared Arrow→LogicalRow conversion (arrow 60). Iceberg 0.10.1 emits arrow 58
+# RecordBatches; we bridge via IPC (arrow-ipc 58 write → arrow-ipc 60 read).
+arrow-to-falkordb-bridge = { path = "../../common/arrow-to-falkordb-bridge" }
 arrow-array = "58"
 arrow-schema = "58"
-arrow-cast = "58"
+arrow-ipc = { version = "58", default-features = false }
+arrow-ipc60 = { package = "arrow-ipc", version = "60", default-features = false }
+arrow60 = { package = "arrow", version = "60", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
