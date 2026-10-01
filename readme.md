@@ -39,7 +39,8 @@ It includes a control plane web tool to configure, initiate and track data migra
 
 Tool list view in the Control Plane
 
-<img width="1161" height="781" alt="dm-sql-10-tools" src="https://github.com/user-attachments/assets/b2517a25-04cf-4add-bd1a-7ec9f88e9d32" />
+<img width="1038" height="811" alt="dm-sql-12-tools" src="https://github.com/user-attachments/assets/5a178309-c2a2-4133-a557-b1d30b99d992" />
+
 
 
 
