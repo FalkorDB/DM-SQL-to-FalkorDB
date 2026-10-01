@@ -215,8 +215,9 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
     let label = to_label(&dataset_name);
 
     let pq = cfg.parquet.as_ref();
-    let object_store = pq.and_then(|p| p.object_store.as_ref()).map(|os| {
-        TemplateObjectStore {
+    let object_store = pq
+        .and_then(|p| p.object_store.as_ref())
+        .map(|os| TemplateObjectStore {
             provider: os.provider.clone().or(os.scheme.clone()),
             region: os.region.clone(),
             access_key_id: os
@@ -227,8 +228,7 @@ pub fn generate_template_yaml(cfg: &Config, schema: &SchemaMetadata) -> Result<S
                 .secret_access_key
                 .as_ref()
                 .map(|_| "$AWS_SECRET_ACCESS_KEY".to_string()),
-        }
-    });
+        });
 
     let template = TemplateConfig {
         parquet: TemplateParquet {
@@ -376,7 +376,7 @@ fn snake_case(name: &str) -> String {
 mod tests {
     use super::*;
     use arrow::array::{Int64Array, StringArray};
-    use arrow::datatypes::{Field, Schema as ArrowSchemaFull, DataType as AD};
+    use arrow::datatypes::{DataType as AD, Field, Schema as ArrowSchemaFull};
     use arrow::record_batch::RecordBatch;
     use parquet::arrow::ArrowWriter;
     use std::sync::Arc;
@@ -427,7 +427,13 @@ mod tests {
         assert!(result.schema.columns.iter().any(|c| c.name == "email"));
 
         let yaml = generate_template_yaml(&cfg, &result.schema).unwrap();
-        assert!(yaml.contains("type: node") || yaml.contains("type:node") || yaml.contains("Node") || yaml.contains("customers") || yaml.contains("label"));
+        assert!(
+            yaml.contains("type: node")
+                || yaml.contains("type:node")
+                || yaml.contains("Node")
+                || yaml.contains("customers")
+                || yaml.contains("label")
+        );
         assert!(yaml.contains("updated_at"));
         assert!(yaml.contains("incremental"));
     }
@@ -436,7 +442,11 @@ mod tests {
     fn arrow_schema_to_columns_maps_types() {
         let schema = ArrowSchema::new(vec![
             Field::new("id", DataType::Int64, false),
-            Field::new("tags", DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))), true),
+            Field::new(
+                "tags",
+                DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+                true,
+            ),
         ]);
         let cols = arrow_schema_to_columns(&schema);
         assert_eq!(cols[0].data_type, "integer");

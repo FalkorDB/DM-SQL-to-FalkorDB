@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, Context, Result};
 use arrow::record_batch::RecordBatch;
 use arrow_to_falkordb_bridge::{
-    build_operator, record_batch_to_logical_rows, ObjectStoreConfig, LogicalRow as BridgeRow,
+    build_operator, record_batch_to_logical_rows, LogicalRow as BridgeRow, ObjectStoreConfig,
 };
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -52,19 +52,14 @@ pub async fn fetch_rows_for_mapping(
     watermark: Option<&str>,
 ) -> Result<(Vec<LogicalRow>, Option<String>)> {
     let pq = cfg.parquet.as_ref();
-    let path = common
-        .source
-        .resolved_path(pq)
-        .ok_or_else(|| {
-            anyhow!(
-                "No parquet path configured for mapping '{}' (set parquet.path or source.path/file)",
-                common.name
-            )
-        })?;
+    let path = common.source.resolved_path(pq).ok_or_else(|| {
+        anyhow!(
+            "No parquet path configured for mapping '{}' (set parquet.path or source.path/file)",
+            common.name
+        )
+    })?;
 
-    let object_store = pq
-        .and_then(|p| p.object_store.clone())
-        .unwrap_or_default();
+    let object_store = pq.and_then(|p| p.object_store.clone()).unwrap_or_default();
     let glob = common
         .source
         .glob
@@ -254,7 +249,10 @@ pub fn read_parquet_bytes(
 
 fn record_batch_to_rows(batch: &RecordBatch) -> Result<Vec<LogicalRow>> {
     let bridge_rows = record_batch_to_logical_rows(batch)?;
-    Ok(bridge_rows.into_iter().map(LogicalRow::from_bridge).collect())
+    Ok(bridge_rows
+        .into_iter()
+        .map(LogicalRow::from_bridge)
+        .collect())
 }
 
 /// Parse Hive-style `key=value` segments from the object key relative to base.
@@ -448,7 +446,10 @@ mod tests {
         };
         let (rows, _) = fetch_rows_for_mapping(&cfg, &common, None).await.unwrap();
         assert!(!rows.is_empty());
-        assert_eq!(rows[0].get("country"), Some(&JsonValue::String("US".into())));
+        assert_eq!(
+            rows[0].get("country"),
+            Some(&JsonValue::String("US".into()))
+        );
         assert_eq!(rows[0].get("year"), Some(&JsonValue::String("2024".into())));
     }
 
@@ -479,13 +480,19 @@ mod tests {
             LogicalRow {
                 values: JsonMap::from_iter([
                     ("id".into(), JsonValue::from(1)),
-                    ("updated_at".into(), JsonValue::String("2024-01-01T00:00:00Z".into())),
+                    (
+                        "updated_at".into(),
+                        JsonValue::String("2024-01-01T00:00:00Z".into()),
+                    ),
                 ]),
             },
             LogicalRow {
                 values: JsonMap::from_iter([
                     ("id".into(), JsonValue::from(2)),
-                    ("updated_at".into(), JsonValue::String("2024-06-01T00:00:00Z".into())),
+                    (
+                        "updated_at".into(),
+                        JsonValue::String("2024-06-01T00:00:00Z".into()),
+                    ),
                 ]),
             },
         ];
@@ -504,7 +511,9 @@ mod tests {
         };
         let mut os = ObjectStoreConfig {
             provider: Some("s3".into()),
-            region: std::env::var("AWS_REGION").ok().or_else(|| std::env::var("AWS_DEFAULT_REGION").ok()),
+            region: std::env::var("AWS_REGION")
+                .ok()
+                .or_else(|| std::env::var("AWS_DEFAULT_REGION").ok()),
             access_key_id: std::env::var("AWS_ACCESS_KEY_ID").ok(),
             secret_access_key: std::env::var("AWS_SECRET_ACCESS_KEY").ok(),
             endpoint: std::env::var("AWS_ENDPOINT_URL").ok(),

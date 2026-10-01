@@ -133,9 +133,7 @@ fn resolve_env_ref(value: &mut Option<String>, field_name: &str) -> Result<()> {
         .and_then(|s| s.strip_suffix('}'))
         .unwrap_or(env_name);
     let resolved = env::var(env_name).with_context(|| {
-        format!(
-            "Environment variable {env_name} referenced by {field_name} is not set"
-        )
+        format!("Environment variable {env_name} referenced by {field_name} is not set")
     })?;
     *value = Some(resolved);
     Ok(())
@@ -259,7 +257,10 @@ fn build_fs_operator(cfg: &ObjectStoreConfig, parsed: &ParsedUri) -> Result<(Ope
     // and "." for relative ones so keys stay portable.
     let path = PathBuf::from(&parsed.key);
     let (root, key) = if path.is_absolute() {
-        ("/".to_string(), parsed.key.trim_start_matches('/').to_string())
+        (
+            "/".to_string(),
+            parsed.key.trim_start_matches('/').to_string(),
+        )
     } else if let Some(r) = &cfg.root {
         (r.clone(), parsed.key.clone())
     } else {
@@ -297,7 +298,7 @@ fn build_s3_operator(cfg: &ObjectStoreConfig, parsed: &ParsedUri) -> Result<(Ope
     if let Some(root) = &cfg.root {
         builder = builder.root(root);
     }
-// OpenDAL defaults to path-style (MinIO-friendly). Opt into virtual-host style when requested.
+    // OpenDAL defaults to path-style (MinIO-friendly). Opt into virtual-host style when requested.
     if cfg.virtual_host_style == Some(true) {
         builder = builder.enable_virtual_host_style();
     }

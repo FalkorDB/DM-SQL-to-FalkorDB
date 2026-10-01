@@ -134,13 +134,17 @@ pub fn array_value_to_json(array: &dyn Array, row_idx: usize) -> Result<JsonValu
             let ms = a.value(row_idx);
             let dt = DateTime::<Utc>::from_timestamp_millis(ms)
                 .ok_or_else(|| anyhow!("invalid Date64 value {ms}"))?;
-            Ok(JsonValue::String(dt.date_naive().format("%Y-%m-%d").to_string()))
+            Ok(JsonValue::String(
+                dt.date_naive().format("%Y-%m-%d").to_string(),
+            ))
         }
         DataType::Timestamp(unit, tz) => timestamp_to_json(array, row_idx, *unit, tz.as_deref()),
         DataType::Decimal128(precision, scale) => {
             let a = downcast::<Decimal128Array>(array)?;
             let raw = a.value(row_idx);
-            Ok(JsonValue::String(decimal128_to_string(raw, *precision, *scale)))
+            Ok(JsonValue::String(decimal128_to_string(
+                raw, *precision, *scale,
+            )))
         }
         DataType::Decimal256(_, scale) => {
             let a = downcast::<Decimal256Array>(array)?;
@@ -273,10 +277,16 @@ fn list_to_json(array: &dyn Array, row_idx: usize) -> Result<JsonValue> {
     if let Some(list) = array.as_any().downcast_ref::<ListArray>() {
         return list_values_to_json(list.value(row_idx).as_ref());
     }
-    if let Some(list) = array.as_any().downcast_ref::<arrow::array::LargeListArray>() {
+    if let Some(list) = array
+        .as_any()
+        .downcast_ref::<arrow::array::LargeListArray>()
+    {
         return list_values_to_json(list.value(row_idx).as_ref());
     }
-    if let Some(list) = array.as_any().downcast_ref::<arrow::array::FixedSizeListArray>() {
+    if let Some(list) = array
+        .as_any()
+        .downcast_ref::<arrow::array::FixedSizeListArray>()
+    {
         return list_values_to_json(list.value(row_idx).as_ref());
     }
     Err(anyhow!("expected list array"))
@@ -337,7 +347,8 @@ pub fn normalise_property_value(value: JsonValue) -> JsonValue {
             if arr.iter().all(is_primitive) {
                 JsonValue::Array(arr)
             } else {
-                let json = serde_json::to_string(&JsonValue::Array(arr)).unwrap_or_else(|_| "[]".into());
+                let json =
+                    serde_json::to_string(&JsonValue::Array(arr)).unwrap_or_else(|_| "[]".into());
                 JsonValue::String(json)
             }
         }
@@ -365,7 +376,10 @@ mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{ArrayRef, Float64Array, Int32Array, Int64Array, ListBuilder, StructArray, TimestampMicrosecondArray};
+    use arrow::array::{
+        ArrayRef, Float64Array, Int32Array, Int64Array, ListBuilder, StructArray,
+        TimestampMicrosecondArray,
+    };
     use arrow::datatypes::{Field, Schema};
     use arrow::record_batch::RecordBatch;
     use std::sync::Arc;
@@ -383,7 +397,10 @@ mod tests {
     #[test]
     fn converts_primitives_and_nulls() {
         let batch = batch_from(vec![
-            ("id", Arc::new(Int64Array::from(vec![Some(1), None, Some(3)])) as ArrayRef),
+            (
+                "id",
+                Arc::new(Int64Array::from(vec![Some(1), None, Some(3)])) as ArrayRef,
+            ),
             (
                 "name",
                 Arc::new(arrow::array::StringArray::from(vec![
@@ -409,7 +426,10 @@ mod tests {
         let rows = record_batch_to_logical_rows(&batch).unwrap();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].get("id"), Some(&JsonValue::from(1)));
-        assert_eq!(rows[0].get("name"), Some(&JsonValue::String("alice".into())));
+        assert_eq!(
+            rows[0].get("name"),
+            Some(&JsonValue::String("alice".into()))
+        );
         assert_eq!(rows[0].get("active"), Some(&JsonValue::Bool(true)));
         assert_eq!(rows[1].get("id"), Some(&JsonValue::Null));
         assert_eq!(rows[2].get("name"), Some(&JsonValue::Null));
@@ -482,7 +502,9 @@ mod tests {
         ]);
         let batch = batch_from(vec![("meta", Arc::new(struct_arr) as ArrayRef)]);
         let rows = record_batch_to_logical_rows(&batch).unwrap();
-        let s = rows[0]["meta"].as_str().expect("struct should be stringified");
+        let s = rows[0]["meta"]
+            .as_str()
+            .expect("struct should be stringified");
         assert!(s.contains("\"id\""));
         assert!(s.contains("10"));
     }

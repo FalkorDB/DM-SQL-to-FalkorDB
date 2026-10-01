@@ -51,11 +51,7 @@ struct Cli {
     interval_secs: u64,
 
     /// Port to expose Prometheus-style metrics on.
-    #[arg(
-        long,
-        env = "PARQUET_TO_FALKORDB_METRICS_PORT",
-        default_value_t = 9996
-    )]
+    #[arg(long, env = "PARQUET_TO_FALKORDB_METRICS_PORT", default_value_t = 9996)]
     metrics_port: u16,
 
     /// Introspect source Parquet schema and print a normalized summary.

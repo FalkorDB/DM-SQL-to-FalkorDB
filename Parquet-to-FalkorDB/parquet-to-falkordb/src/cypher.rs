@@ -43,10 +43,7 @@ mod tests {
         assert_eq!(json_value_to_cypher_literal(&json!(null)), "null");
         assert_eq!(json_value_to_cypher_literal(&json!(true)), "true");
         assert_eq!(json_value_to_cypher_literal(&json!(42)), "42");
-        assert_eq!(
-            json_value_to_cypher_literal(&json!("a'b")),
-            "'a\\'b'"
-        );
+        assert_eq!(json_value_to_cypher_literal(&json!("a'b")), "'a\\'b'");
         let obj = json!({"id": 1, "name": "x"});
         let lit = json_value_to_cypher_literal(&obj);
         assert!(lit.contains("`id`: 1"));
