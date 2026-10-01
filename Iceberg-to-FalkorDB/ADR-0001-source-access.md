@@ -1,10 +1,10 @@
 # ADR-0001: Iceberg source access strategy for v1
 
 ## Status
-Accepted (Phase 0 spike complete).
+Accepted (feasibility spike complete).
 
 ## Context
-Per the `Add Parquet and Iceberg as DM-SQL-to-FalkorDB sources` plan, Phase 0 requires validating the `iceberg` crate (apache/iceberg-rust) before committing to an architecture for `Iceberg-to-FalkorDB`, specifically:
+Before committing to an architecture for `Iceberg-to-FalkorDB`, we validated the `iceberg` crate (apache/iceberg-rust), specifically:
 catalog types supported, full-scan correctness (types, deletes), incremental/snapshot-scan maturity, delete-file (merge-on-read) handling, async/tokio compatibility, and dependency footprint.
 
 This ADR records the research and hands-on validation performed, and the resulting v1 decision.
@@ -33,9 +33,9 @@ For `Iceberg-to-FalkorDB` v1:
 3. **Incremental sync for v1 reuses the existing column-watermark model** (`delta.updated_at_column`, identical to every other connector in this repo): each run performs a full `table.scan()` filtered client-side (or via `with_filter(...)` pushdown where the predicate maps to an Iceberg expression) to rows newer than the stored watermark, with soft-deletes handled via the existing `deleted_flag_column`/`deleted_flag_value` convention. This sacrifices Iceberg-native snapshot efficiency for v1 but matches proven, already-shipped repo semantics and avoids coupling to unreleased upstream APIs.
 4. **Catalog support for v1**: REST (`iceberg-catalog-rest`) and Glue (`iceberg-catalog-glue`) as the two most common managed/open catalogs; SQL catalog (`iceberg-catalog-sql`) documented as a lightweight/local option. Hive Metastore (`iceberg-catalog-hms`) deferred as fast-follow since it requires a running HMS service to validate. No Hadoop/filesystem-only catalog type (doesn't exist as a dedicated crate).
 5. **Storage backend**: use `iceberg-storage-opendal`'s `OpenDalResolvingStorageFactory` directly; no custom object-store client code needed. This also simplifies the shared `common/arrow-to-falkordb-bridge` crate planned for use by both `Parquet-to-FalkorDB` and `Iceberg-to-FalkorDB` — it can standardize on OpenDAL for storage configuration (S3/GCS/Azure/local credentials) rather than the originally assumed `object_store` crate, since OpenDAL already covers the same backends and is Iceberg's own dependency.
-6. **Dependency footprint**: pulls in `arrow-*` (`58.x`), `parquet` (`58.x`), `opendal` (`0.57.x`) and transitively `reqwest`/`rustls`/AWS SigV4 signing crates. No native (non-Rust) system dependencies were required on macOS in this spike (unlike, e.g., the Oracle Instant Client requirement for `Oracle-to-FalkorDB`). Final Linux/musl runner-image footprint should still be measured in Phase 3 of the parent plan.
+6. **Dependency footprint**: pulls in `arrow-*` (`58.x`), `parquet` (`58.x`), `opendal` (`0.57.x`) and transitively `reqwest`/`rustls`/AWS SigV4 signing crates. No native (non-Rust) system dependencies were required on macOS in this spike (unlike, e.g., the Oracle Instant Client requirement for `Oracle-to-FalkorDB`). Final Linux/musl runner-image footprint should still be measured as part of packaging/release work.
 
 ## Consequences
-- The parent plan's Phase 2 (`Iceberg-to-FalkorDB MVP`) proceeds with the full-scan + column-watermark design, not snapshot-incremental, reducing implementation risk and unblocking work immediately rather than waiting on upstream PRs.
-- The parent plan's shared bridge crate (`common/arrow-to-falkordb-bridge`) should be scoped to (a) Arrow `RecordBatch` → `LogicalRow` (JSON) conversion and (b) a thin OpenDAL configuration helper, rather than wrapping the `object_store` crate.
+- The initial `Iceberg-to-FalkorDB` implementation proceeds with the full-scan + column-watermark design, not snapshot-incremental, reducing implementation risk and unblocking work immediately rather than waiting on upstream PRs.
+- The shared bridge crate (`common/arrow-to-falkordb-bridge`) should be scoped to (a) Arrow `RecordBatch` → `LogicalRow` (JSON) conversion and (b) a thin OpenDAL configuration helper, rather than wrapping the `object_store` crate.
 - A fast-follow item is tracked: revisit native Iceberg incremental/changelog scanning once apache/iceberg-rust ships both incremental append scan and changelog scan in a released version, which could replace the column-watermark approach with a more correct, more efficient snapshot-based design.

@@ -129,13 +129,18 @@ Most configs reference environment variables for secrets (for example `$DATABRIC
 - What it does: Loads and incrementally syncs Apache Iceberg tables into FalkorDB via a full `table.scan().to_arrow()` read (correctly applies merge-on-read deletes) plus the same column-watermark incremental model used by other connectors.
 - Catalogs: REST (`iceberg-catalog-rest`), AWS Glue (`iceberg-catalog-glue`), SQL/sqlite (`iceberg-catalog-sql`); storage via `iceberg-storage-opendal` (`file://`, `s3://`, `gs://`, `azblob://`).
 - Scaffolding: supports `--introspect-schema` and `--generate-template` from Iceberg table metadata; no automatic cross-table FK/edge inference.
-- Documentation: [Iceberg-to-FalkorDB/README.md](Iceberg-to-FalkorDB/README.md) and the Phase 0 feasibility spike / v1 design decisions in [Iceberg-to-FalkorDB/ADR-0001-source-access.md](Iceberg-to-FalkorDB/ADR-0001-source-access.md)
+- Documentation: [Iceberg-to-FalkorDB/README.md](Iceberg-to-FalkorDB/README.md); source-access design decisions in [Iceberg-to-FalkorDB/ADR-0001-source-access.md](Iceberg-to-FalkorDB/ADR-0001-source-access.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+- End-to-end sample: `Iceberg-to-FalkorDB/sample_data/` (local SQL-catalog table generator) + `Iceberg-to-FalkorDB/iceberg_sample_to_falkordb.yaml`
 
-Quick start (from the crate directory):
+Quick start (from the tool directory; generates a local Iceberg table first):
 
 ```bash
-cd Iceberg-to-FalkorDB/iceberg-to-falkordb
+cd Iceberg-to-FalkorDB
+pip install -r sample_data/requirements.txt
+eval "$(python3 sample_data/generate_sample_table.py)"   # creates the table, exports catalog env vars
+
+cd iceberg-to-falkordb
 cargo build --release
 
 # Run once
@@ -232,18 +237,21 @@ cargo run --release -- --config oracle.cdc.yaml
 - Scaffolding: supports `--introspect-schema` and `--generate-template` from the Parquet file footer schema.
 - Documentation: [Parquet-to-FalkorDB/README.md](Parquet-to-FalkorDB/README.md)
 - Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+- End-to-end sample: `Parquet-to-FalkorDB/sample_data/` + `Parquet-to-FalkorDB/parquet_sample_to_falkordb.yaml`
 
-Quick start (from the crate directory):
+Quick start (from the tool directory, so the bundled sample data resolves correctly):
 
 ```bash
-cd Parquet-to-FalkorDB/parquet-to-falkordb
-cargo build --release
+cd Parquet-to-FalkorDB
+cargo build --release --manifest-path parquet-to-falkordb/Cargo.toml
 
-# Run once
-cargo run --release -- --config ../parquet_sample_to_falkordb.yaml
+# Run once, against the bundled local sample dataset
+cargo run --release --manifest-path parquet-to-falkordb/Cargo.toml -- \
+  --config parquet_sample_to_falkordb.yaml
 
 # Continuous sync
-cargo run --release -- --config ../parquet_sample_to_falkordb.yaml --daemon --interval-secs 60
+cargo run --release --manifest-path parquet-to-falkordb/Cargo.toml -- \
+  --config parquet_sample_to_falkordb.yaml --daemon --interval-secs 60
 ```
 
 Shares the `common/arrow-to-falkordb-bridge` crate (Arrow → JSON conversion, OpenDAL storage) with Iceberg-to-FalkorDB.
