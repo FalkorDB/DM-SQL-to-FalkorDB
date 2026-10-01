@@ -1,0 +1,110 @@
+# Example config: load Iceberg tables into FalkorDB
+#
+# Usage (from Iceberg-to-FalkorDB/iceberg-to-falkordb):
+#   export ICEBERG_CATALOG_URI="https://catalog.example.com"
+#   export ICEBERG_TOKEN="..."
+#   cargo run --release -- --config ../iceberg_sample_to_falkordb.yaml
+#
+# Catalog types: rest | glue | sql
+# For local/dev, use type: sql with a sqlite URI and file:// warehouse:
+#   iceberg:
+#     catalog:
+#       type: sql
+#       uri: "sqlite:///tmp/iceberg_catalog.db"
+#       warehouse: "file:///tmp/iceberg_warehouse"
+#       bind_style: qmark
+
+iceberg:
+  catalog:
+    type: rest
+    uri: "$ICEBERG_CATALOG_URI"
+    warehouse: "s3://my-bucket/warehouse"
+    properties:
+      # REST catalog bearer token (optional; some catalogs use credential instead)
+      token: "$ICEBERG_TOKEN"
+  # Optional storage properties forwarded to OpenDAL FileIO
+  storage_properties:
+    s3.region: "us-east-1"
+    s3.access-key-id: "$AWS_ACCESS_KEY_ID"
+    s3.secret-access-key: "$AWS_SECRET_ACCESS_KEY"
+  # Optional default namespace for --introspect-schema / --generate-template
+  default_namespace: "sales"
+
+falkordb:
+  endpoint: "falkor://127.0.0.1:6379"
+  graph: "iceberg_sample_graph"
+  max_unwind_batch_size: 1000
+  indexes:
+    - labels: ["Order"]
+      property: "id"
+      source_table: "sales.orders"
+      source_columns: ["order_id"]
+    - labels: ["Customer"]
+      property: "id"
+      source_table: "sales.customers"
+      source_columns: ["customer_id"]
+
+state:
+  backend: "file"
+  file_path: "iceberg_sample_state.json"
+
+mappings:
+  - type: node
+    name: customers
+    source:
+      table: "sales.customers"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Customer"]
+    key:
+      column: "customer_id"
+      property: "id"
+    properties:
+      email: { column: "email" }
+      name: { column: "name" }
+
+  - type: node
+    name: orders
+    source:
+      table: "sales.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    labels: ["Order"]
+    key:
+      column: "order_id"
+      property: "id"
+    properties:
+      status: { column: "status" }
+      total: { column: "total" }
+      ordered_at: { column: "ordered_at" }
+
+  # Edges are defined manually (no automatic FK inference in v1).
+  - type: edge
+    name: customer_placed_order
+    source:
+      table: "sales.orders"
+    mode: incremental
+    delta:
+      updated_at_column: "updated_at"
+      deleted_flag_column: "is_deleted"
+      deleted_flag_value: true
+    relationship: "PLACED"
+    direction: out
+    from:
+      node_mapping: customers
+      match_on:
+        - column: "customer_id"
+          property: "id"
+    to:
+      node_mapping: orders
+      match_on:
+        - column: "order_id"
+          property: "id"
+    properties:
+      ordered_at: { column: "ordered_at" }
