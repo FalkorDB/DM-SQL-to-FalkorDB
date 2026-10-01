@@ -15,9 +15,11 @@ tools:
     bigquery: true
     clickhouse: true
     databricks: true
+    iceberg: true
     mariadb: true
     mysql: true
     oracle: true
+    parquet: true
     postgres: true
     snowflake: true
     spark: true
