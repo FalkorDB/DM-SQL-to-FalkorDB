@@ -10,9 +10,11 @@ It includes a control plane web tool to configure, initiate and track data migra
   - [BigQuery → FalkorDB](#tool-bigquery)
   - [ClickHouse → FalkorDB](#tool-clickhouse)
   - [Databricks → FalkorDB](#tool-databricks)
+  - [Iceberg → FalkorDB](#tool-iceberg)
   - [MariaDB → FalkorDB](#tool-mariadb)
   - [MySQL → FalkorDB](#tool-mysql)
   - [Oracle → FalkorDB](#tool-oracle)
+  - [Parquet → FalkorDB](#tool-parquet)
   - [PostgreSQL → FalkorDB](#tool-postgresql)
   - [Snowflake → FalkorDB](#tool-snowflake)
   - [Spark → FalkorDB](#tool-spark)
@@ -30,7 +32,7 @@ It includes a control plane web tool to configure, initiate and track data migra
 
 - Rust toolchain (Cargo)
 - Node.js + npm (optional; for the control plane UI)
-- Network access to your source system (BigQuery / ClickHouse / Databricks / MariaDB / MySQL / Oracle / PostgreSQL / Snowflake / Spark / SQL Server)
+- Network access to your source system (BigQuery / ClickHouse / Databricks / Iceberg / MariaDB / MySQL / Oracle / Parquet / PostgreSQL / Snowflake / Spark / SQL Server)
 - A reachable FalkorDB endpoint (for example `falkor://127.0.0.1:6379`)
 
 ## Tools
@@ -119,6 +121,34 @@ Most configs reference environment variables for secrets (for example `$DATABRIC
 
 ---
 
+<a id="tool-iceberg"></a>
+
+### Iceberg → FalkorDB
+
+- Location: `Iceberg-to-FalkorDB/`
+- What it does: Loads and incrementally syncs Apache Iceberg tables into FalkorDB via a full `table.scan().to_arrow()` read (correctly applies merge-on-read deletes) plus the same column-watermark incremental model used by other connectors.
+- Catalogs: REST (`iceberg-catalog-rest`), AWS Glue (`iceberg-catalog-glue`), SQL/sqlite (`iceberg-catalog-sql`); storage via `iceberg-storage-opendal` (`file://`, `s3://`, `gs://`, `azblob://`).
+- Scaffolding: supports `--introspect-schema` and `--generate-template` from Iceberg table metadata; no automatic cross-table FK/edge inference.
+- Documentation: [Iceberg-to-FalkorDB/README.md](Iceberg-to-FalkorDB/README.md) and the Phase 0 feasibility spike / v1 design decisions in [Iceberg-to-FalkorDB/ADR-0001-source-access.md](Iceberg-to-FalkorDB/ADR-0001-source-access.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+
+Quick start (from the crate directory):
+
+```bash
+cd Iceberg-to-FalkorDB/iceberg-to-falkordb
+cargo build --release
+
+# Run once
+cargo run --release -- --config ../iceberg_sample_to_falkordb.yaml
+
+# Continuous sync
+cargo run --release -- --config ../iceberg_sample_to_falkordb.yaml --daemon --interval-secs 300
+```
+
+Most configs reference environment variables for secrets (for example `$AWS_ACCESS_KEY_ID`, `$ICEBERG_TOKEN`).
+
+---
+
 <a id="tool-mariadb"></a>
 
 ### MariaDB → FalkorDB
@@ -190,6 +220,34 @@ cargo run --release -- --config oracle.incremental.yaml
 # CDC mode
 cargo run --release -- --config oracle.cdc.yaml
 ```
+---
+
+<a id="tool-parquet"></a>
+
+### Parquet → FalkorDB
+
+- Location: `Parquet-to-FalkorDB/`
+- What it does: Loads and incrementally syncs Parquet files (local filesystem or object storage: `s3://`, `gs://`/`gcs://`, `az://`/`abfs://`) into FalkorDB, with glob/prefix multi-file datasets and optional Hive-style partition column extraction.
+- Incremental modes: column watermark via `delta.updated_at_column` (same model as other connectors), or a file-level last-modified cursor for append-only datasets.
+- Scaffolding: supports `--introspect-schema` and `--generate-template` from the Parquet file footer schema.
+- Documentation: [Parquet-to-FalkorDB/README.md](Parquet-to-FalkorDB/README.md)
+- Scaffold behavior: see [Scaffold schema + template generation behavior](#scaffold-schema--template-generation-behavior)
+
+Quick start (from the crate directory):
+
+```bash
+cd Parquet-to-FalkorDB/parquet-to-falkordb
+cargo build --release
+
+# Run once
+cargo run --release -- --config ../parquet_sample_to_falkordb.yaml
+
+# Continuous sync
+cargo run --release -- --config ../parquet_sample_to_falkordb.yaml --daemon --interval-secs 60
+```
+
+Shares the `common/arrow-to-falkordb-bridge` crate (Arrow → JSON conversion, OpenDAL storage) with Iceberg-to-FalkorDB.
+
 ---
 
 <a id="tool-postgresql"></a>
@@ -398,7 +456,7 @@ Example image build:
 Example Helm install (single control plane, PostgreSQL + Snowflake enabled together):
 
 ```bash
-helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --create-namespace --set images.defaultTag=v0.1.0 --set tools.enabled.postgres=true --set tools.enabled.snowflake=true --set tools.enabled.oracle=false --set tools.enabled.mysql=false --set tools.enabled.mariadb=false --set tools.enabled.clickhouse=false --set tools.enabled.bigquery=false --set tools.enabled.databricks=false --set tools.enabled.spark=false --set tools.enabled.sqlserver=false
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --create-namespace --set images.defaultTag=v0.1.0 --set tools.enabled.postgres=true --set tools.enabled.snowflake=true --set tools.enabled.oracle=false --set tools.enabled.mysql=false --set tools.enabled.mariadb=false --set tools.enabled.clickhouse=false --set tools.enabled.bigquery=false --set tools.enabled.databricks=false --set tools.enabled.spark=false --set tools.enabled.sqlserver=false --set tools.enabled.parquet=false --set tools.enabled.iceberg=false
 ```
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
@@ -412,9 +470,11 @@ flowchart LR
         BQ[BigQuery]
         CH[ClickHouse]
         DB[Databricks]
+        ICE[Iceberg]
         MARIA[MariaDB]
         MYSQL[MySQL]
         ORA[Oracle]
+        PARQ[Parquet]
         PG[PostgreSQL]
         SF[Snowflake]
         SP[Spark]
@@ -434,9 +494,11 @@ flowchart LR
     RP --> BQ
     RP --> CH
     RP --> DB
+    RP --> ICE
     RP --> MARIA
     RP --> MYSQL
     RP --> ORA
+    RP --> PARQ
     RP --> PG
     RP --> SF
     RP --> SP
@@ -450,7 +512,7 @@ flowchart LR
 |-----------|-------------|
 | **Control Plane** | Single deployment providing web UI, REST API, and run orchestration. Manages runner lifecycle, logs, metrics, and config persistence. |
 | **Runner Pod** | Run workload pod using the shared multi-tool runner image. It contains all tool binaries and executes the selected tool for the run. |
-| **Source Databases** | Any supported SQL source (BigQuery, ClickHouse, Databricks, MariaDB, MySQL, Oracle, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
+| **Source Databases** | Any supported SQL source or file/table format (BigQuery, ClickHouse, Databricks, Iceberg, MariaDB, MySQL, Oracle, Parquet, PostgreSQL, Snowflake, Spark, SQL Server). Each runner connects independently to its configured source. |
 | **FalkorDB** | Destination graph database. All runners write transformed data (nodes and edges) to the shared FalkorDB instance. |
 
 **Data flow:**
@@ -596,6 +658,19 @@ Minimal example:
 - `databricks_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `databricks_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
+### Iceberg → FalkorDB (`iceberg_to_falkordb_`)
+
+- `iceberg_to_falkordb_runs`
+- `iceberg_to_falkordb_failed_runs`
+- `iceberg_to_falkordb_rows_fetched`
+- `iceberg_to_falkordb_rows_written`
+- `iceberg_to_falkordb_rows_deleted`
+- `iceberg_to_falkordb_mapping_runs{mapping="<name>"}`
+- `iceberg_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `iceberg_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `iceberg_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `iceberg_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
 ### MariaDB → FalkorDB (`mariadb_to_falkordb_`)
 
 - `mariadb_to_falkordb_runs`
@@ -634,6 +709,19 @@ Minimal example:
 - `oracle_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
 - `oracle_to_falkordb_mapping_rows_written{mapping="<name>"}`
 - `oracle_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
+
+### Parquet → FalkorDB (`parquet_to_falkordb_`)
+
+- `parquet_to_falkordb_runs`
+- `parquet_to_falkordb_failed_runs`
+- `parquet_to_falkordb_rows_fetched`
+- `parquet_to_falkordb_rows_written`
+- `parquet_to_falkordb_rows_deleted`
+- `parquet_to_falkordb_mapping_runs{mapping="<name>"}`
+- `parquet_to_falkordb_mapping_failed_runs{mapping="<name>"}`
+- `parquet_to_falkordb_mapping_rows_fetched{mapping="<name>"}`
+- `parquet_to_falkordb_mapping_rows_written{mapping="<name>"}`
+- `parquet_to_falkordb_mapping_rows_deleted{mapping="<name>"}`
 
 ### PostgreSQL → FalkorDB (`postgres_to_falkordb_`)
 
@@ -707,9 +795,11 @@ Most SQL-style loaders in this repository support scaffold mode:
 - BigQuery
 - ClickHouse
 - Databricks
+- Iceberg
 - MariaDB
 - MySQL
 - Oracle
+- Parquet
 - PostgreSQL
 - Snowflake
 - Spark

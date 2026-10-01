@@ -32,10 +32,13 @@ jobs:
             control-plane/server 
             BigQuery-to-FalkorDB/bigquery-to-falkordb 
             ClickHouse-to-FalkorDB 
+            common/arrow-to-falkordb-bridge 
             Databricks-to-FalkorDB/databricks-to-falkordb 
+            Iceberg-to-FalkorDB/iceberg-to-falkordb 
             MariaDB-to-FalkorDB 
             MySQL-to-FalkorDB 
             Oracle-to-FalkorDB 
+            Parquet-to-FalkorDB/parquet-to-falkordb 
             PostgreSQL-to-FalkorDB/postgres-to-falkordb 
             SQLServer-to-FalkorDB 
             Snowflake-to-FalkorDB 
