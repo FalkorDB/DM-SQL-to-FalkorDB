@@ -14,11 +14,13 @@ import type { CanvasLink, CanvasNode, ToolSummary } from '../lib/types'
 type ConfigSyntax = 'auto' | 'yaml' | 'json'
 type ViewerTab = 'config' | 'schema' | 'template' | 'canvas'
 type CanvasGraphData = { nodes: CanvasNode[]; links: CanvasLink[] }
+type CanvasDimension = '2d' | '3d'
 type FalkorDBCanvasElement = HTMLElement & {
   setData: (data: CanvasGraphData) => void
   setConfig: (config: {
     backgroundColor?: string
     foregroundColor?: string
+    dimension?: CanvasDimension
     captionsKeys?: [string, boolean][]
     showPropertyKeyPrefix?: boolean
     nodeStyle?: { fontSize?: number }
@@ -30,8 +32,11 @@ type FalkorDBCanvasElement = HTMLElement & {
       onLinkRightClick?: (link: unknown, event: MouseEvent) => void
       onBackgroundClick?: (event: MouseEvent) => void
       onBackgroundRightClick?: (event: MouseEvent) => void
+      onDimensionChange?: (dimension: CanvasDimension) => void
     }
   }) => void
+  setDimension?: (dimension: CanvasDimension) => Promise<void>
+  getDimension?: () => CanvasDimension
   zoomToFit?: (paddingMultiplier?: number) => void
 }
 type MappingPropertySpec = { name: string; column?: string | null; graphType?: string | null }
@@ -255,6 +260,7 @@ export default function ConfigEditorPage() {
   const [canvasData, setCanvasData] = useState<CanvasGraphData | null>(null)
   const [canvasWarnings, setCanvasWarnings] = useState<string[]>([])
   const [canvasSource, setCanvasSource] = useState<'config' | 'template' | null>(null)
+  const [canvasDimension, setCanvasDimension] = useState<CanvasDimension>('2d')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [generatingTemplate, setGeneratingTemplate] = useState(false)
@@ -360,6 +366,7 @@ export default function ConfigEditorPage() {
     canvas.setConfig({
       backgroundColor: isDark ? '#0B1220' : '#FFFFFF',
       foregroundColor: isDark ? '#E5E7EB' : '#111827',
+      dimension: canvasDimension,
       captionsKeys: [['node_label', false], ['mapping_name', false]],
       showPropertyKeyPrefix: false,
       nodeStyle: { fontSize: 5 },
@@ -384,13 +391,16 @@ export default function ConfigEditorPage() {
           event.preventDefault()
           setCanvasPopup(null)
         },
+        // 3D can fail to load (e.g. no WebGL); the canvas falls back to 2D and
+        // reports it here, so keep the toggle in sync with what is actually shown.
+        onDimensionChange: (dimension) => setCanvasDimension(dimension),
       }
     })
 
     if (typeof canvas.zoomToFit === 'function' && canvasData.nodes.length > 0) {
       window.setTimeout(() => canvas.zoomToFit?.(1.05), 50)
     }
-  }, [activeTab, canvasData, isDark, openEdgePopup, openNodePopup])
+  }, [activeTab, canvasData, canvasDimension, isDark, openEdgePopup, openNodePopup])
 
   const title = isNew ? 'New config' : 'Edit config'
 
@@ -842,18 +852,44 @@ export default function ConfigEditorPage() {
                   <span className="ml-2 text-[11px] text-foreground/60">Source: {canvasSource}</span>
                 ) : null}
               </div>
-              <button
-                type="button"
-                className="px-2 py-1 rounded-md text-xs border border-border hover:border-primary"
-                onClick={() => {
-                  setCanvasData(null)
-                  setCanvasWarnings([])
-                  setCanvasSource(null)
-                  setCanvasPopup(null)
-                }}
-              >
-                Clear
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center rounded-md border border-border overflow-hidden" title="Switch between 2D and 3D rendering">
+                  <button
+                    type="button"
+                    className={`px-2 py-1 text-xs ${
+                      canvasDimension === '2d'
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-background/60'
+                    }`}
+                    onClick={() => setCanvasDimension('2d')}
+                  >
+                    2D
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 text-xs border-l border-border ${
+                      canvasDimension === '3d'
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-background/60'
+                    }`}
+                    onClick={() => setCanvasDimension('3d')}
+                  >
+                    3D
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded-md text-xs border border-border hover:border-primary"
+                  onClick={() => {
+                    setCanvasData(null)
+                    setCanvasWarnings([])
+                    setCanvasSource(null)
+                    setCanvasPopup(null)
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
             </div>
             {canvasWarnings.length > 0 ? (
               <div className="mb-2 p-2 rounded-md border border-border bg-background/40 text-xs space-y-1">

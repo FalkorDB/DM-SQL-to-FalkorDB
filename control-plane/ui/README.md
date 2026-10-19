@@ -9,7 +9,7 @@ This is the web UI for the control plane (see `../server`). It’s a Vite + Reac
   - Create/edit YAML or JSON configs
   - Syntax-highlighted config editor (Auto/YAML/JSON selector)
   - Four config viewer tabs: Config file, Extracted schema, Generated template, Graph visualization
-  - Graph preview rendering using FalkorDB Canvas (derived from selected config mappings)
+  - Graph preview rendering using FalkorDB Canvas (derived from selected config mappings), with a 2D/3D toggle
   - Load config from a local `.yaml`/`.yml`/`.json` file
 - Runs management (start/stop, history)
 - Live log streaming (SSE)
@@ -41,3 +41,4 @@ The production build outputs to `dist/`. The control plane server can be configu
 - The UI has an “API key” button that stores the control plane API key in browser localStorage.
 - The config editor uses CodeMirror for syntax highlighting.
 - Graph visualization uses `@falkordb/canvas` and prefers config-derived mapping topology.
+- The graph visualization tab has a 2D/3D toggle (`setDimension`); if 3D fails to load (e.g. no WebGL), the canvas falls back to 2D and the toggle reflects that automatically via `onDimensionChange`.
