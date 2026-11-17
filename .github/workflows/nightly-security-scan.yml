@@ -1,0 +1,65 @@
+name: Nightly Security Scan
+
+permissions:
+  contents: read
+  security-events: write
+
+on:
+  schedule:
+    # 02:17 UTC daily (off-peak minute to avoid the top-of-hour GitHub Actions queue).
+    - cron: '17 2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  grype-scan:
+    name: Scan ${{ matrix.name }} (${{ matrix.tag }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: runner
+            image: docker.io/falkordb/dm-sql-to-falkordb-runner
+            tag: latest
+          - name: control-plane
+            image: docker.io/falkordb/dm-sql-to-falkordb-control-plane
+            tag: latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Scan ${{ matrix.image }}:${{ matrix.tag }} with Grype
+        id: scan
+        continue-on-error: true
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6.5.1
+        with:
+          image: ${{ matrix.image }}:${{ matrix.tag }}
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
+          output-format: sarif
+          cache-db: true
+
+      - name: Upload SARIF report
+        if: always() && steps.scan.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: grype-${{ matrix.name }}
+
+      - name: Summarize result
+        if: always()
+        run: |
+          if [ "${{ steps.scan.outcome }}" = "failure" ]; then
+            echo "### :rotating_light: ${{ matrix.image }}:${{ matrix.tag }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Grype found fixable vulnerabilities at **critical** severity or above. See the Security tab (category \`grype-${{ matrix.name }}\`) for details." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### :white_check_mark: ${{ matrix.image }}:${{ matrix.tag }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "No fixable critical vulnerabilities found." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fail job if critical vulnerabilities were found
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "Grype scan failed for ${{ matrix.image }}:${{ matrix.tag }} (critical, fixable vulnerabilities present)." >&2
+          exit 1
