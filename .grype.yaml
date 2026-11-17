@@ -1,0 +1,48 @@
+# Grype configuration for the nightly security scan
+# (.github/workflows/nightly-security-scan.yml).
+#
+# These ignore rules suppress specific, individually-reviewed vulnerabilities
+# that are bundled inside the vendored `kubectl` binary in
+# control-plane/Dockerfile. As of the last review, no upstream kubectl
+# release (checked up to v1.36.6 and v1.37.2) is built against a Go
+# toolchain/golang.org/x/net version that satisfies Grype's reported fix
+# version for these CVEs, so there is currently no action we can take other
+# than waiting for an upstream kubectl release.
+#
+# IMPORTANT: Grype ignore rules do not expire. Revisit this list whenever the
+# nightly-security-scan workflow flags new criticals, and remove entries once
+# kubectl ships a build with the fixed dependency versions noted below.
+ignore:
+  # Windows-only junction-based directory escape in os.Root.Mkdir/MkdirAll.
+  # Fixed in Go 1.26.9 / 1.27.2; not yet shipped in any kubectl release.
+  # Also not exploitable here since the runtime image is Linux-only.
+  - vulnerability: GO-2026-6604
+    package:
+      name: stdlib
+      location: "/usr/local/bin/kubectl"
+    reason: "Windows-only vulnerability; runtime image is Linux. No kubectl release ships the fixed Go toolchain (1.26.9/1.27.2) yet. Revisit when available."
+
+  # HTTP/2 server double flow-control refund (net/http2). Fixed in Go
+  # 1.26.9 / 1.27.2; not yet shipped in any kubectl release. kubectl itself
+  # does not run as an HTTP/2 server in our deployment.
+  - vulnerability: CVE-2026-78663
+    package:
+      name: stdlib
+      location: "/usr/local/bin/kubectl"
+    reason: "kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release ships the fixed Go toolchain (1.26.9/1.27.2) yet. Revisit when available."
+
+  # Same HTTP/2 double flow-control refund issue, flagged against both the
+  # stdlib (net/http2) and the vendored golang.org/x/net copy. Fixed in Go
+  # 1.26.9 / x/net v0.60.0; neither is vendored by any kubectl release yet
+  # (v1.36.6 vendors v0.56.0, v1.37.2 vendors v0.57.0).
+  - vulnerability: GO-2026-6612
+    package:
+      name: stdlib
+      location: "/usr/local/bin/kubectl"
+    reason: "kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release ships the fixed Go toolchain (1.26.9) yet. Revisit when available."
+
+  - vulnerability: GO-2026-6612
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
