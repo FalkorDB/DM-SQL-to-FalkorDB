@@ -46,3 +46,33 @@ ignore:
       name: golang.org/x/net
       location: "/usr/local/bin/kubectl"
     reason: "kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
+
+  # The following HIGH-severity vulnerabilities only surfaced once the
+  # nightly-security-scan severity-cutoff was lowered to `high` (#78/#79).
+  # All are HTTP/2 *server*-side issues (DoS / crash / resource exhaustion)
+  # in golang.org/x/net v0.56.0, bundled inside the vendored kubectl binary.
+  # Fixed in x/net v0.60.0; not yet vendored by any kubectl release
+  # (v1.36.6 vendors v0.56.0, v1.37.2 vendors v0.57.0).
+  - vulnerability: GO-2026-6603
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "HTTP/2 server-side Trailer header memory exhaustion. kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
+
+  - vulnerability: GO-2026-6611
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "HTTP/2 SETTINGS-frame CPU exhaustion affecting both client and server. kubectl's usage as a thin CLI client does not expose the long-lived, high-volume connection pattern this requires. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
+
+  - vulnerability: GO-2026-6617
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "HTTP/2 server-side HPACK encoder data race/crash. kubectl is used as a client, not an HTTP/2 server, in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
+
+  - vulnerability: GO-2026-6610
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "HTTP/2 reverse-proxy response-smuggling risk; kubectl does not act as an HTTP/2 reverse proxy in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
