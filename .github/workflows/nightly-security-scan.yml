@@ -35,7 +35,7 @@ jobs:
         with:
           image: ${{ matrix.image }}:${{ matrix.tag }}
           fail-build: true
-          severity-cutoff: critical
+          severity-cutoff: high
           only-fixed: true
           output-format: sarif
           cache-db: true
@@ -52,14 +52,14 @@ jobs:
         run: |
           if [ "${{ steps.scan.outcome }}" = "failure" ]; then
             echo "### :rotating_light: ${{ matrix.image }}:${{ matrix.tag }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "Grype found fixable vulnerabilities at **critical** severity or above. See the Security tab (category \`grype-${{ matrix.name }}\`) for details." >> "$GITHUB_STEP_SUMMARY"
+            echo "Grype found fixable vulnerabilities at **high** severity or above. See the Security tab (category \`grype-${{ matrix.name }}\`) for details." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "### :white_check_mark: ${{ matrix.image }}:${{ matrix.tag }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "No fixable critical vulnerabilities found." >> "$GITHUB_STEP_SUMMARY"
+            echo "No fixable high or critical vulnerabilities found." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Fail job if critical vulnerabilities were found
+      - name: Fail job if high or critical vulnerabilities were found
         if: steps.scan.outcome == 'failure'
         run: |
-          echo "Grype scan failed for ${{ matrix.image }}:${{ matrix.tag }} (critical, fixable vulnerabilities present)." >&2
+          echo "Grype scan failed for ${{ matrix.image }}:${{ matrix.tag }} (high or critical, fixable vulnerabilities present)." >&2
           exit 1
