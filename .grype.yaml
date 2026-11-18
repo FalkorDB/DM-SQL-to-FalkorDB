@@ -76,3 +76,19 @@ ignore:
       name: golang.org/x/net
       location: "/usr/local/bin/kubectl"
     reason: "HTTP/2 reverse-proxy response-smuggling risk; kubectl does not act as an HTTP/2 reverse proxy in this deployment. No kubectl release vendors golang.org/x/net >= 0.60.0 yet. Revisit when available."
+
+  # Newly published advisories (surfaced on a later nightly run after the
+  # four above were already ignored) affecting different Go packages
+  # vendored inside the same kubectl binary. Same underlying situation: no
+  # kubectl release (checked up to v1.37.2) vendors the fixed versions yet.
+  - vulnerability: GO-2026-6860
+    package:
+      name: golang.org/x/net
+      location: "/usr/local/bin/kubectl"
+    reason: "O(n^2) allocation DoS in golang.org/x/net/html parsing. kubectl does not parse untrusted HTML in this deployment. Fixed in x/net 0.62.0, not yet vendored by any kubectl release. Revisit when available."
+
+  - vulnerability: GO-2026-6629
+    package:
+      name: golang.org/x/text
+      location: "/usr/local/bin/kubectl"
+    reason: "Out-of-bounds panic in the x/text Nickname transform profile on crafted input. kubectl does not expose this transform to untrusted input in this deployment. Fixed in x/text 0.41.0, not yet vendored by any kubectl release. Revisit when available."
