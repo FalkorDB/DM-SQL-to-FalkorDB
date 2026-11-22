@@ -1,55 +1,15 @@
 # Grype configuration for the nightly security scan
 # (.github/workflows/nightly-security-scan.yml).
 #
-# Background: control-plane/Dockerfile vendors a standalone `kubectl`
-# binary at /usr/local/bin/kubectl, built upstream by the Kubernetes
-# project against its own pinned Go toolchain and Go module versions
-# (stdlib, golang.org/x/net, golang.org/x/text, etc). We do not control
-# those versions directly - we can only bump KUBECTL_VERSION to whatever
-# kubectl release is currently available.
+# There are intentionally no ignore rules. The control-plane image used to
+# suppress Go-ecosystem findings (stdlib, golang.org/x/net, golang.org/x/text)
+# in the vendored /usr/local/bin/kubectl binary, because the upstream release
+# binary bundles whatever Go toolchain and modules the Kubernetes release
+# pinned. kubectl is now built from source in control-plane/Dockerfile (stage
+# `kubectl-build`) with a patched Go toolchain and patched modules, so those
+# findings are reported again and must be fixed, not ignored.
 #
-# As of the last review (2026-11-20), no available kubectl release
-# (checked up to v1.36.6 and v1.37.2) vendors Go module versions that
-# clear Grype's fix-version bar for the Go-ecosystem CVEs affecting this
-# binary. New CVEs in this family have been landing frequently (see
-# PRs #77, #79, #80) - individually enumerating each CVE ID became
-# unsustainable (a single upstream Go security release can add 8+ CVEs
-# at once). The rules below instead suppress all findings for the
-# specific Go packages known to cause this recurring, unfixable-upstream
-# noise, scoped ONLY to the vendored kubectl binary's location so nothing
-# else in either image is affected.
-#
-# Why this is an acceptable tradeoff for THIS binary specifically:
-# kubectl is invoked here purely as a thin CLI client against the
-# Kubernetes API server (see control-plane/server's use of
-# CONTROL_PLANE_EXECUTION_BACKEND=kubernetes) - it does not parse
-# untrusted HTML/text, does not run as an HTTP/2 (or any) server, and is
-# not a reverse proxy. Essentially all CVEs seen so far in this family
-# have been server-side, parser-side, or Windows-only issues that do not
-# apply to that usage pattern.
-#
-# IMPORTANT: Grype ignore rules do not expire and do not alert on new
-# findings within their scope. Revisit this file:
-#   - whenever nightly-security-scan.yml flags a new critical/high outside
-#     of these 3 packages+location (i.e. something NOT already suppressed)
-#   - periodically (e.g. during dependency-review passes) to re-check
-#     whether a kubectl release now vendors fixed versions, and narrow or
-#     remove these rules accordingly
-ignore:
-  - package:
-      name: stdlib
-      type: go-module
-      location: "/usr/local/bin/kubectl"
-    reason: "Go stdlib vulnerabilities bundled in the vendored kubectl binary. kubectl is used here only as a CLI client against the Kubernetes API server (no HTTP/2 server, no untrusted parsing). No kubectl release vendors a fixed Go toolchain yet. See file header for full rationale and review process."
-
-  - package:
-      name: golang.org/x/net
-      type: go-module
-      location: "/usr/local/bin/kubectl"
-    reason: "golang.org/x/net vulnerabilities bundled in the vendored kubectl binary. kubectl is used here only as a CLI client against the Kubernetes API server (no HTTP/2 server, no untrusted parsing). No kubectl release vendors a fixed golang.org/x/net yet. See file header for full rationale and review process."
-
-  - package:
-      name: golang.org/x/text
-      type: go-module
-      location: "/usr/local/bin/kubectl"
-    reason: "golang.org/x/text vulnerabilities bundled in the vendored kubectl binary. kubectl does not expose untrusted input to x/text transforms in this deployment. No kubectl release vendors a fixed golang.org/x/text yet. See file header for full rationale and review process."
+# Grype ignore rules do not expire and do not alert on new findings within
+# their scope, so prefer fixing the dependency. If a rule is ever added here,
+# scope it as narrowly as possible (package + location) and document why.
+ignore: []

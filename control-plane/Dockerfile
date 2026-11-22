@@ -12,20 +12,40 @@ WORKDIR /src
 COPY . ./
 RUN cargo build --manifest-path control-plane/server/Cargo.toml --release
 
+# Build kubectl from source instead of downloading the upstream release binary.
+# The upstream binary is built against whatever Go toolchain and Go module
+# versions the Kubernetes release pinned, which lag behind security fixes
+# (stdlib, golang.org/x/net, golang.org/x/text). Building it here lets us use a
+# patched toolchain and patched modules on top of the same release tag.
+#
+# When bumping these, keep in mind:
+#   - The golang image tag must be a Go release that includes the stdlib
+#     security fixes. GOTOOLCHAIN=local makes the build fail instead of
+#     silently downloading a different toolchain if the kubectl release
+#     requires a newer one.
+#   - golang.org/x/net v0.62.0 itself requires golang.org/x/text >= v0.43.0, so
+#     the two module pins must be bumped together.
+FROM golang:1.26.11-bookworm AS kubectl-build
+ARG KUBECTL_VERSION=v1.36.6
+ARG GOLANG_X_NET_VERSION=v0.62.0
+ARG GOLANG_X_TEXT_VERSION=v0.43.0
+WORKDIR /src
+RUN git clone --depth 1 --branch "${KUBECTL_VERSION}" https://github.com/kubernetes/kubernetes.git .
+# The Kubernetes repository ships a go.work file; workspace mode does not allow
+# -mod=mod, so it is disabled and the root go.mod (with its staging replaces)
+# is used directly.
+ENV GOTOOLCHAIN=local GOWORK=off GOFLAGS=-mod=mod CGO_ENABLED=0
+RUN go get "golang.org/x/net@${GOLANG_X_NET_VERSION}" "golang.org/x/text@${GOLANG_X_TEXT_VERSION}" \
+    && go build -trimpath \
+        -ldflags "-s -w -X k8s.io/component-base/version.gitVersion=${KUBECTL_VERSION} -X k8s.io/component-base/version.gitTreeState=clean" \
+        -o /out/kubectl ./cmd/kubectl
+
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-ARG KUBECTL_VERSION=v1.36.6
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "${ARCH}" in \
-      amd64) KARCH="amd64" ;; \
-      arm64) KARCH="arm64" ;; \
-      *) echo "unsupported architecture: ${ARCH}" && exit 1 ;; \
-    esac \
-    && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${KARCH}/kubectl" -o /usr/local/bin/kubectl \
-    && chmod +x /usr/local/bin/kubectl
+COPY --from=kubectl-build /out/kubectl /usr/local/bin/kubectl
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
