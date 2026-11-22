@@ -1,0 +1,66 @@
+name: Control-plane Image Build and Scan
+
+# Builds the control-plane image from control-plane/Dockerfile and scans it with
+# Grype before a change can merge. Without this, Dockerfile changes (and the
+# vendored kubectl build in particular) are only exercised after merge by
+# release-images.yml, and new fixable vulnerabilities are only caught by the
+# nightly scan of the already-published image.
+#
+# The scan settings mirror nightly-security-scan.yml (fail on fixable findings
+# at high severity or above) and use the repository's .grype.yaml.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - control-plane/**
+      - .grype.yaml
+      - .github/workflows/control-plane-image-scan.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-scan:
+    name: Build and scan control-plane image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build control-plane image
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: .
+          file: ./control-plane/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: dm-sql-to-falkordb-control-plane:pr-scan
+          cache-from: type=gha,scope=control-plane-image
+          cache-to: type=gha,scope=control-plane-image,mode=max
+
+      - name: Smoke-test the vendored kubectl binary
+        run: |
+          docker run --rm --entrypoint /usr/local/bin/kubectl \
+            dm-sql-to-falkordb-control-plane:pr-scan version --client
+
+      - name: Scan image with Grype
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6.5.1
+        with:
+          image: dm-sql-to-falkordb-control-plane:pr-scan
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+          cache-db: true
