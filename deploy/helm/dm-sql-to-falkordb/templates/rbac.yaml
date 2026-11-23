@@ -5,9 +5,17 @@ metadata:
   namespace: {{ include "dm-sql-to-falkordb.runnerNamespace" . }}
   labels:
     {{- include "dm-sql-to-falkordb.labels" . | nindent 4 }}
+# Least privilege: the control plane creates/deletes run ConfigMaps, Jobs and
+# Deployments, and only reads pods and their logs. It never creates pods directly.
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "configmaps"]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["batch"]
     resources: ["jobs"]

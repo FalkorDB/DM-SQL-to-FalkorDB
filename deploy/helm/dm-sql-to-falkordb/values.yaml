@@ -1,3 +1,24 @@
+# Pod Security Standards: with the defaults below, every pod this chart creates (the
+# control plane) and every runner/scaffold pod the control plane creates at runtime
+# satisfies the Kubernetes "restricted" Pod Security Standard, so the release can be
+# installed into namespaces labelled `pod-security.kubernetes.io/enforce=restricted`.
+#
+# OpenShift (restricted-v2 SCC) assigns a random UID/GID per namespace. To let it do
+# so, unset the fixed IDs, e.g.:
+#   --set controlPlane.podSecurityContext.runAsUser=null \
+#   --set controlPlane.podSecurityContext.runAsGroup=null \
+#   --set controlPlane.podSecurityContext.fsGroup=null \
+#   --set kubernetesRunner.podSecurityContext.runAsUser=null \
+#   --set kubernetesRunner.podSecurityContext.runAsGroup=null \
+#   --set kubernetesRunner.podSecurityContext.fsGroup=null
+# Both images only write to mounted volumes (PVCs / emptyDirs), so they work with any UID.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Image pull secrets for the control-plane pod.
+imagePullSecrets: []
+
 images:
   defaultTag: ""
   controlPlane:
@@ -29,25 +50,59 @@ controlPlane:
   replicaCount: 1
   executionBackend: kubernetes
   bindAddress: "0.0.0.0:3003"
+  # API key protecting the control-plane API. Prefer `existingApiKeySecret` so the key
+  # is not stored in Helm values / release history. When neither is set the API is
+  # unauthenticated: do not expose it (ingress / LoadBalancer) in that case.
   apiKey: ""
-  resources: {}
+  # Name of an existing Secret holding the API key (takes precedence over `apiKey`).
+  existingApiKeySecret: ""
+  existingApiKeySecretKey: CONTROL_PLANE_API_KEY
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 1Gi
   extraEnv: []
   podAnnotations: {}
+  podLabels: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  priorityClassName: ""
   serviceAccount:
     create: true
     name: ""
+    annotations: {}
+    # The control plane drives runner workloads through kubectl using its in-cluster
+    # service account token, so the token must stay mounted.
+    automountServiceAccountToken: true
   # Pod-level securityContext for the control-plane Deployment. The control-plane image
-  # runs as the non-root `appuser` (uid 10001, see control-plane/Dockerfile). Setting
-  # fsGroup ensures mounted PersistentVolumeClaims (e.g. the control-plane data PVC) are
-  # writable by that user, avoiding "Permission Denied" errors on first mount.
+  # runs as the non-root UID/GID 10001 (see control-plane/Dockerfile). fsGroup makes the
+  # control-plane data PVC writable by that user.
   podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
     fsGroup: 10001
-  # Container-level securityContext for the control-plane container. Empty by default;
-  # override to add e.g. runAsNonRoot, readOnlyRootFilesystem, etc.
-  securityContext: {}
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  # Container-level securityContext for the control-plane container.
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  # Writable scratch space mounted at /tmp (HOME for kubectl's cache), needed because
+  # the root filesystem is read-only.
+  tmpVolume:
+    sizeLimit: 256Mi
 
 service:
   type: ClusterIP
@@ -75,16 +130,53 @@ persistence:
 kubernetesRunner:
   namespaceOverride: ""
   imagePullPolicy: IfNotPresent
+  # Service account used by runner/scaffold pods. Runner pods execute migration tools
+  # against external databases and never talk to the Kubernetes API, so by default they
+  # get a dedicated service account with no RBAC and no mounted token instead of the
+  # control plane's (which can create Jobs/Deployments).
+  # Setting `serviceAccountName` uses that existing account and skips creating one.
   serviceAccountName: ""
+  serviceAccount:
+    create: true
+    # Defaults to "<fullname>-runner".
+    name: ""
+    # e.g. cloud workload-identity annotations for BigQuery / Snowflake / Databricks access.
+    annotations: {}
+  # Pod-level automountServiceAccountToken for runner pods. Leave false unless a tool
+  # needs the Kubernetes API token (cloud workload identity webhooks inject their own
+  # projected tokens and do not need it).
+  automountServiceAccountToken: false
   envSecretName: ""
   envConfigMapName: ""
   binaryDir: /opt/falkordb/bin
   # Pod-level securityContext applied by the control-plane to the runner Jobs/Deployments
-  # it creates dynamically. The runner image runs as the non-root `runner` user (uid
-  # 10002, see docker/runner.Dockerfile). Setting fsGroup ensures the shared workspace
-  # PVC (below) is writable by that user.
+  # it creates dynamically. The runner image runs as the non-root UID/GID 10002 (see
+  # docker/runner.Dockerfile). fsGroup makes the shared workspace PVC (below) writable.
   podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
     fsGroup: 10002
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  # Container-level securityContext applied to runner containers. readOnlyRootFilesystem
+  # can be enabled; the control plane then mounts emptyDirs at /tmp (and /workspace when
+  # the shared PVC is disabled) so tools still have scratch space.
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  # Resources applied to runner containers. Migration memory use depends heavily on the
+  # source and batch sizes, so no defaults are set; setting at least requests and a
+  # memory limit is recommended (and required by namespaces with a ResourceQuota).
+  resources: {}
   sharedPvc:
     enabled: true
     existingClaim: ""
@@ -92,3 +184,19 @@ kubernetesRunner:
     accessModes:
       - ReadWriteOnce
     size: 20Gi
+
+# Optional NetworkPolicies. Requires a CNI that enforces NetworkPolicy.
+networkPolicy:
+  enabled: false
+  controlPlane:
+    # Peers allowed to reach the control-plane HTTP port (e.g. your ingress controller's
+    # namespace). Empty allows any source, but still blocks every other port.
+    ingressFrom: []
+    # Extra egress rules for the control plane. When empty, egress is not restricted
+    # (it needs the Kubernetes API server, whose address is cluster-specific, and runner
+    # metrics endpoints).
+    egress: []
+  runner:
+    # Restrict ingress to runner/scaffold pods to the control plane (metrics scraping).
+    # Runner egress is left open because migration sources are arbitrary.
+    enabled: true

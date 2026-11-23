@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dm-sql-to-falkordb.fullname" . }}
+  labels:
+    {{- include "dm-sql-to-falkordb.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dm-sql-to-falkordb.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    {{- if .Values.networkPolicy.controlPlane.egress }}
+    - Egress
+    {{- end }}
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      {{- with .Values.networkPolicy.controlPlane.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- with .Values.networkPolicy.controlPlane.egress }}
+  egress:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- if .Values.networkPolicy.runner.enabled }}
+---
+# Runner and scaffold pods only accept traffic from the control plane (metrics scraping).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dm-sql-to-falkordb.fullname" . }}-runner
+  namespace: {{ include "dm-sql-to-falkordb.runnerNamespace" . }}
+  labels:
+    {{- include "dm-sql-to-falkordb.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - falkordb-migrate-runner
+          - falkordb-migrate-scaffold
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "dm-sql-to-falkordb.selectorLabels" . | nindent 14 }}
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

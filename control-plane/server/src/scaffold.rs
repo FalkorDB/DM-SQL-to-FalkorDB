@@ -494,6 +494,8 @@ fn build_scaffold_job_manifest(
         }
     }
 
+    state.execution.kubernetes.runner_pod.apply(&mut pod_spec);
+
     json!({
         "apiVersion": "batch/v1",
         "kind": "Job",

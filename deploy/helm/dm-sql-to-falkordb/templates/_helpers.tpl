@@ -87,3 +87,36 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- join "," (sortAlpha $tools) -}}
 {{- end -}}
+
+{{/*
+Service account used by runner/scaffold pods. An explicit kubernetesRunner.serviceAccountName
+wins; otherwise the chart-managed runner account (no RBAC, no token) is used.
+*/}}
+{{- define "dm-sql-to-falkordb.runnerServiceAccountName" -}}
+{{- if .Values.kubernetesRunner.serviceAccountName -}}
+{{- .Values.kubernetesRunner.serviceAccountName -}}
+{{- else if .Values.kubernetesRunner.serviceAccount.create -}}
+{{- default (printf "%s-runner" (include "dm-sql-to-falkordb.fullname" .)) .Values.kubernetesRunner.serviceAccount.name -}}
+{{- else -}}
+{{- include "dm-sql-to-falkordb.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Name of the Secret holding the control-plane API key, or empty when no key is configured.
+*/}}
+{{- define "dm-sql-to-falkordb.apiKeySecretName" -}}
+{{- if .Values.controlPlane.existingApiKeySecret -}}
+{{- .Values.controlPlane.existingApiKeySecret -}}
+{{- else if .Values.controlPlane.apiKey -}}
+{{- printf "%s-api-key" (include "dm-sql-to-falkordb.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "dm-sql-to-falkordb.apiKeySecretKey" -}}
+{{- if .Values.controlPlane.existingApiKeySecret -}}
+{{- .Values.controlPlane.existingApiKeySecretKey | default "CONTROL_PLANE_API_KEY" -}}
+{{- else -}}
+CONTROL_PLANE_API_KEY
+{{- end -}}
+{{- end -}}

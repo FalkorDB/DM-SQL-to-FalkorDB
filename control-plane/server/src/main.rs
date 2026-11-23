@@ -95,6 +95,38 @@ struct Cli {
     /// non-root runner containers can write to mounted PersistentVolumeClaims.
     #[arg(long, env = "CONTROL_PLANE_K8S_POD_FS_GROUP")]
     k8s_pod_fs_group: Option<i64>,
+
+    /// Optional pod-level securityContext (JSON object) applied to runner workloads.
+    #[arg(long, env = "CONTROL_PLANE_K8S_POD_SECURITY_CONTEXT")]
+    k8s_pod_security_context: Option<String>,
+
+    /// Optional container-level securityContext (JSON object) applied to runner containers.
+    #[arg(long, env = "CONTROL_PLANE_K8S_CONTAINER_SECURITY_CONTEXT")]
+    k8s_container_security_context: Option<String>,
+
+    /// Optional container resources (JSON object) applied to runner containers.
+    #[arg(long, env = "CONTROL_PLANE_K8S_RUNNER_RESOURCES")]
+    k8s_runner_resources: Option<String>,
+
+    /// Optional pod-level automountServiceAccountToken applied to runner workloads.
+    #[arg(long, env = "CONTROL_PLANE_K8S_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN")]
+    k8s_automount_service_account_token: Option<bool>,
+}
+
+/// Parses an optional JSON-object CLI/env value. Empty strings are treated as unset.
+fn parse_json_object_arg(
+    name: &str,
+    raw: Option<String>,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let Some(raw) = raw.filter(|v| !v.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).with_context(|| format!("{name} must be valid JSON"))?;
+    if !value.is_object() {
+        anyhow::bail!("{name} must be a JSON object");
+    }
+    Ok(Some(value))
 }
 
 #[tokio::main]
@@ -152,7 +184,22 @@ async fn main() -> anyhow::Result<()> {
                 env_configmap_name: cli.k8s_env_configmap,
                 kubectl_bin: cli.k8s_kubectl_bin,
                 binary_dir: cli.k8s_binary_dir,
-                pod_fs_group: cli.k8s_pod_fs_group,
+                runner_pod: models::RunnerPodHardening {
+                    pod_fs_group: cli.k8s_pod_fs_group,
+                    pod_security_context: parse_json_object_arg(
+                        "CONTROL_PLANE_K8S_POD_SECURITY_CONTEXT",
+                        cli.k8s_pod_security_context,
+                    )?,
+                    container_security_context: parse_json_object_arg(
+                        "CONTROL_PLANE_K8S_CONTAINER_SECURITY_CONTEXT",
+                        cli.k8s_container_security_context,
+                    )?,
+                    resources: parse_json_object_arg(
+                        "CONTROL_PLANE_K8S_RUNNER_RESOURCES",
+                        cli.k8s_runner_resources,
+                    )?,
+                    automount_service_account_token: cli.k8s_automount_service_account_token,
+                },
             },
         },
         api_key: std::env::var("CONTROL_PLANE_API_KEY")

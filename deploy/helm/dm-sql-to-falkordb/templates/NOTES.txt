@@ -1,0 +1,14 @@
+dm-sql-to-falkordb control plane is deployed as {{ include "dm-sql-to-falkordb.fullname" . }} in namespace {{ .Release.Namespace }}.
+
+Runner workloads are created in namespace {{ include "dm-sql-to-falkordb.runnerNamespace" . }} using service account {{ include "dm-sql-to-falkordb.runnerServiceAccountName" . }}.
+{{- if not (include "dm-sql-to-falkordb.apiKeySecretName" .) }}
+
+WARNING: no API key is configured (controlPlane.apiKey / controlPlane.existingApiKeySecret).
+The control-plane API is unauthenticated and can start workloads in the cluster.
+{{- if or .Values.ingress.enabled (ne .Values.service.type "ClusterIP") }}
+It is currently exposed outside the cluster ({{ if .Values.ingress.enabled }}ingress{{ else }}service type {{ .Values.service.type }}{{ end }}). Configure an API key.
+{{- end }}
+{{- end }}
+
+Access locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "dm-sql-to-falkordb.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}

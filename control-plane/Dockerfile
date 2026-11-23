@@ -11,6 +11,20 @@ FROM rust:1.96-bookworm AS server-build
 WORKDIR /src
 COPY . ./
 RUN cargo build --manifest-path control-plane/server/Cargo.toml --release
+# Stage only the files the control plane reads at runtime: every tool.manifest.json
+# (discovered by walking CONTROL_PLANE_REPO_ROOT) and the Cargo.toml it points to via
+# `manifestPath` (used to infer the runner binary name). Shipping the whole source tree
+# and its build artifacts (target/) bloated the image and exposed source code.
+RUN set -eu; \
+    mkdir -p /out/repo; \
+    find . -maxdepth 4 -name tool.manifest.json -not -path '*/target/*' | while read -r manifest; do \
+      cp --parents "${manifest}" /out/repo/; \
+      for cargo_toml in $(sed -n 's/.*"manifestPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${manifest}"); do \
+        cp --parents "${cargo_toml}" /out/repo/; \
+      done; \
+    done; \
+    test -n "$(find /out/repo -name tool.manifest.json)"; \
+    mkdir -p /out/data-dir/runs /out/data-dir/configs
 
 # Build kubectl from source instead of downloading the upstream release binary.
 # The upstream binary is built against whatever Go toolchain and Go module
@@ -40,31 +54,32 @@ RUN go get "golang.org/x/net@${GOLANG_X_NET_VERSION}" "golang.org/x/text@${GOLAN
         -ldflags "-s -w -X k8s.io/component-base/version.gitVersion=${KUBECTL_VERSION} -X k8s.io/component-base/version.gitTreeState=clean" \
         -o /out/kubectl ./cmd/kubectl
 
-FROM debian:bookworm-slim AS runtime
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=kubectl-build /out/kubectl /usr/local/bin/kubectl
+# Distroless runtime: no shell, no package manager, no setuid binaries. It ships
+# glibc, libgcc, ca-certificates and tzdata, which is all the (rustls-based) control
+# plane and the statically linked kubectl need. The image runs as a numeric non-root
+# UID/GID so Kubernetes can enforce `runAsNonRoot` without an explicit `runAsUser`.
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
+# Binaries and static assets are owned by root and not writable by the runtime user.
+COPY --from=kubectl-build --chown=0:0 --chmod=0755 /out/kubectl /usr/local/bin/kubectl
+COPY --from=server-build --chown=0:0 --chmod=0755 /src/control-plane/server/target/release/falkordb-migrate-control-plane /usr/local/bin/falkordb-migrate-control-plane
+COPY --from=server-build --chown=0:0 /out/repo /opt/falkordb/repo
+COPY --from=ui-build --chown=0:0 /src/control-plane/ui/dist /opt/falkordb/repo/control-plane/ui/dist
+# Only the data directory is writable by the runtime user.
+COPY --from=server-build --chown=10001:10001 --chmod=0750 /out/data-dir /var/lib/falkordb-control-plane
 
 WORKDIR /opt/falkordb
-
-COPY --from=server-build /src/control-plane/server/target/release/falkordb-migrate-control-plane /usr/local/bin/falkordb-migrate-control-plane
-COPY --from=server-build /src /opt/falkordb/repo
-COPY --from=ui-build /src/control-plane/ui/dist /opt/falkordb/repo/control-plane/ui/dist
 
 ENV CONTROL_PLANE_REPO_ROOT=/opt/falkordb/repo
 ENV CONTROL_PLANE_UI_DIST=/opt/falkordb/repo/control-plane/ui/dist
 ENV CONTROL_PLANE_DATA_DIR=/var/lib/falkordb-control-plane
 ENV CONTROL_PLANE_EXECUTION_BACKEND=kubernetes
 ENV CONTROL_PLANE_BIND=0.0.0.0:3003
+# kubectl writes its discovery/HTTP cache under $HOME/.kube; point HOME at /tmp so the
+# container works with a read-only root filesystem (mount an emptyDir at /tmp).
+ENV HOME=/tmp
 
-RUN mkdir -p /var/lib/falkordb-control-plane/runs /var/lib/falkordb-control-plane/configs \
-    && chown -R appuser:appuser /opt/falkordb /var/lib/falkordb-control-plane
-
-USER appuser
+USER 10001:10001
 EXPOSE 3003
 
 ENTRYPOINT ["/usr/local/bin/falkordb-migrate-control-plane"]

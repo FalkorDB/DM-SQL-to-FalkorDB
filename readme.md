@@ -470,6 +470,23 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql 
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
 
+#### Security defaults
+
+The chart's defaults satisfy the Kubernetes [`restricted` Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted). That covers the control-plane pod and the runner/scaffold pods the control plane creates at runtime. You can install into a namespace that enforces it:
+
+```bash
+kubectl create namespace dm-sql
+kubectl label namespace dm-sql pod-security.kubernetes.io/enforce=restricted
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --set controlPlane.existingApiKeySecret=dm-sql-api-key
+```
+
+- Both images run as numeric non-root users (control plane `10001`, runner `10002`). The control-plane image is distroless and runs with a read-only root filesystem.
+- Pods drop all capabilities, disallow privilege escalation and use the `RuntimeDefault` seccomp profile. Runner pod settings come from `kubernetesRunner.podSecurityContext`, `kubernetesRunner.securityContext` and `kubernetesRunner.resources`.
+- Runner pods use a dedicated service account (`<release>-runner`) that has no RBAC and no mounted token. Set `kubernetesRunner.serviceAccountName` to use your own account instead, for example one carrying cloud workload-identity annotations.
+- Protect the API with `controlPlane.existingApiKeySecret` (preferred) or `controlPlane.apiKey`. The API is unauthenticated without one.
+- Set `networkPolicy.enabled=true` to restrict ingress to the control plane and to runner pods.
+- On OpenShift (`restricted-v2`), unset the fixed IDs so the platform can assign them: set `runAsUser`, `runAsGroup` and `fsGroup` to `null` under both `controlPlane.podSecurityContext` and `kubernetesRunner.podSecurityContext`.
+
 <a id="deployment-architecture"></a>
 ### Deployment architecture
 

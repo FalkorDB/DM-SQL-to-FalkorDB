@@ -51,10 +51,122 @@ pub struct KubernetesExecutionConfig {
     pub env_configmap_name: Option<String>,
     pub kubectl_bin: String,
     pub binary_dir: String,
+    /// Security/resource settings applied to every runner pod (run and scaffold
+    /// workloads) created by the kubernetes execution backend.
+    pub runner_pod: RunnerPodHardening,
+}
+
+/// Pod- and container-level settings applied to runner pods created by the
+/// kubernetes execution backend. All fields are optional so that the control plane
+/// keeps working when it is deployed without the Helm chart.
+#[derive(Debug, Clone, Default)]
+pub struct RunnerPodHardening {
     /// Optional pod-level `securityContext.fsGroup` applied to runner workloads so that
     /// non-root runner containers can write to mounted PersistentVolumeClaims (e.g. the
-    /// shared workspace PVC).
+    /// shared workspace PVC). Ignored when `pod_security_context` already sets `fsGroup`.
     pub pod_fs_group: Option<i64>,
+    /// Full pod-level `securityContext` (JSON object).
+    pub pod_security_context: Option<serde_json::Value>,
+    /// Container-level `securityContext` (JSON object) for the runner container.
+    pub container_security_context: Option<serde_json::Value>,
+    /// Container `resources` (JSON object) for the runner container.
+    pub resources: Option<serde_json::Value>,
+    /// Pod-level `automountServiceAccountToken`.
+    pub automount_service_account_token: Option<bool>,
+}
+
+impl RunnerPodHardening {
+    /// Applies the configured settings to a pod spec that has a single runner
+    /// container. When the container uses a read-only root filesystem, writable
+    /// `emptyDir` volumes are mounted at `/tmp` (and at `/workspace` when no shared
+    /// workspace volume is mounted there) so tools can still write scratch files.
+    pub fn apply(&self, pod_spec: &mut serde_json::Value) {
+        let Some(spec) = pod_spec.as_object_mut() else {
+            return;
+        };
+
+        let mut pod_sc = self
+            .pod_security_context
+            .as_ref()
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        if let Some(fs_group) = self.pod_fs_group {
+            pod_sc
+                .entry("fsGroup".to_string())
+                .or_insert_with(|| serde_json::Value::from(fs_group));
+        }
+        if !pod_sc.is_empty() {
+            spec.insert(
+                "securityContext".to_string(),
+                serde_json::Value::Object(pod_sc),
+            );
+        }
+
+        if let Some(automount) = self.automount_service_account_token {
+            spec.insert(
+                "automountServiceAccountToken".to_string(),
+                serde_json::Value::Bool(automount),
+            );
+        }
+
+        let read_only_root = self
+            .container_security_context
+            .as_ref()
+            .and_then(|v| v.get("readOnlyRootFilesystem"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut extra_volumes = Vec::new();
+        if let Some(container) = spec
+            .get_mut("containers")
+            .and_then(|v| v.as_array_mut())
+            .and_then(|c| c.first_mut())
+            .and_then(|c| c.as_object_mut())
+        {
+            if let Some(sc) = self
+                .container_security_context
+                .as_ref()
+                .filter(|v| v.as_object().is_some_and(|o| !o.is_empty()))
+            {
+                container.insert("securityContext".to_string(), sc.clone());
+            }
+            if let Some(resources) = self
+                .resources
+                .as_ref()
+                .filter(|v| v.as_object().is_some_and(|o| !o.is_empty()))
+            {
+                container.insert("resources".to_string(), resources.clone());
+            }
+
+            if read_only_root {
+                let mounts = container
+                    .entry("volumeMounts".to_string())
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let Some(mounts) = mounts.as_array_mut() {
+                    let has_mount = |mounts: &Vec<serde_json::Value>, path: &str| {
+                        mounts
+                            .iter()
+                            .any(|m| m.get("mountPath").and_then(|p| p.as_str()) == Some(path))
+                    };
+                    for (name, path) in [("tmp", "/tmp"), ("workspace-scratch", "/workspace")] {
+                        if !has_mount(mounts, path) {
+                            mounts.push(serde_json::json!({ "name": name, "mountPath": path }));
+                            extra_volumes.push(serde_json::json!({ "name": name, "emptyDir": {} }));
+                        }
+                    }
+                }
+            }
+        }
+
+        if !extra_volumes.is_empty() {
+            let volumes = spec
+                .entry("volumes".to_string())
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+            if let Some(volumes) = volumes.as_array_mut() {
+                volumes.extend(extra_volumes);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -286,4 +398,97 @@ pub fn ok_json<T: Serialize>(val: T) -> Json<T> {
 
 pub fn state<S>(State(s): State<S>) -> S {
     s
+}
+
+#[cfg(test)]
+mod runner_pod_hardening_tests {
+    use super::RunnerPodHardening;
+    use serde_json::json;
+
+    fn base_pod_spec() -> serde_json::Value {
+        json!({
+            "containers": [{
+                "name": "runner",
+                "volumeMounts": [{ "name": "run-config", "mountPath": "/run-config" }]
+            }],
+            "volumes": [{ "name": "run-config", "configMap": { "name": "cfg" } }]
+        })
+    }
+
+    #[test]
+    fn default_is_noop() {
+        let mut spec = base_pod_spec();
+        RunnerPodHardening::default().apply(&mut spec);
+        assert_eq!(spec, base_pod_spec());
+    }
+
+    #[test]
+    fn fs_group_only_keeps_legacy_behavior() {
+        let mut spec = base_pod_spec();
+        RunnerPodHardening {
+            pod_fs_group: Some(10002),
+            ..Default::default()
+        }
+        .apply(&mut spec);
+        assert_eq!(spec["securityContext"], json!({ "fsGroup": 10002 }));
+    }
+
+    #[test]
+    fn applies_restricted_settings() {
+        let mut spec = base_pod_spec();
+        RunnerPodHardening {
+            pod_fs_group: Some(1),
+            pod_security_context: Some(json!({
+                "runAsNonRoot": true,
+                "fsGroup": 10002,
+                "seccompProfile": { "type": "RuntimeDefault" }
+            })),
+            container_security_context: Some(json!({
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": { "drop": ["ALL"] }
+            })),
+            resources: Some(json!({ "limits": { "memory": "1Gi" } })),
+            automount_service_account_token: Some(false),
+        }
+        .apply(&mut spec);
+
+        // An explicit fsGroup in the pod security context wins over pod_fs_group.
+        assert_eq!(spec["securityContext"]["fsGroup"], json!(10002));
+        assert_eq!(spec["securityContext"]["runAsNonRoot"], json!(true));
+        assert_eq!(spec["automountServiceAccountToken"], json!(false));
+        let container = &spec["containers"][0];
+        assert_eq!(
+            container["securityContext"]["capabilities"]["drop"],
+            json!(["ALL"])
+        );
+        assert_eq!(container["resources"]["limits"]["memory"], json!("1Gi"));
+        let mounts: Vec<&str> = container["volumeMounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["mountPath"].as_str().unwrap())
+            .collect();
+        assert_eq!(mounts, vec!["/run-config", "/tmp", "/workspace"]);
+        assert_eq!(spec["volumes"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn read_only_root_does_not_shadow_shared_workspace() {
+        let mut spec = json!({
+            "containers": [{
+                "name": "runner",
+                "volumeMounts": [{ "name": "workspace", "mountPath": "/workspace" }]
+            }],
+            "volumes": [{ "name": "workspace", "persistentVolumeClaim": { "claimName": "pvc" } }]
+        });
+        RunnerPodHardening {
+            container_security_context: Some(json!({ "readOnlyRootFilesystem": true })),
+            ..Default::default()
+        }
+        .apply(&mut spec);
+        let mounts = spec["containers"][0]["volumeMounts"].as_array().unwrap();
+        assert_eq!(mounts.len(), 2);
+        assert_eq!(mounts[1]["mountPath"], json!("/tmp"));
+    }
 }
