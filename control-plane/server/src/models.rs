@@ -454,6 +454,7 @@ mod runner_pod_hardening_tests {
         let hardening = RunnerPodHardening {
             extra_labels: Some(json!({
                 "app.kubernetes.io/instance": "rel-a",
+                "dm.falkordb/release-namespace": "ns-a",
                 "app.kubernetes.io/name": "evil",
                 "ignored": 1
             })),
@@ -465,7 +466,8 @@ mod runner_pod_hardening_tests {
             labels,
             json!({
                 "app.kubernetes.io/name": "falkordb-migrate-runner",
-                "app.kubernetes.io/instance": "rel-a"
+                "app.kubernetes.io/instance": "rel-a",
+                "dm.falkordb/release-namespace": "ns-a"
             })
         );
     }

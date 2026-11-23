@@ -40,7 +40,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "dm-sql-to-falkordb.runnerReleaseLabels" . | nindent 6 }}
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In

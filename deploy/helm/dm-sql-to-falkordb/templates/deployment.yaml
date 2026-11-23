@@ -72,10 +72,11 @@ spec:
               value: {{ .Values.kubernetesRunner.binaryDir | quote }}
             - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
               value: {{ include "dm-sql-to-falkordb.runnerServiceAccountName" . | quote }}
-            # Release-specific label on runner/scaffold pods so this release's
-            # NetworkPolicy never selects another release's runners.
+            # Release-specific labels (name + namespace) on runner/scaffold pods so this
+            # release's NetworkPolicy never selects another release's runners, even when
+            # same-named releases from different namespaces share a runner namespace.
             - name: CONTROL_PLANE_K8S_RUNNER_LABELS
-              value: {{ dict "app.kubernetes.io/instance" .Release.Name | toJson | quote }}
+              value: {{ include "dm-sql-to-falkordb.runnerReleaseLabels" . | fromYaml | toJson | quote }}
             - name: CONTROL_PLANE_K8S_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN
               value: {{ .Values.kubernetesRunner.automountServiceAccountToken | quote }}
             {{- with .Values.kubernetesRunner.podSecurityContext }}

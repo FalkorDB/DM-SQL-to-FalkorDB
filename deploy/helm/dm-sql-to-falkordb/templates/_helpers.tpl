@@ -123,3 +123,13 @@ Name of the Secret holding the control-plane API key, or empty when no key is co
 CONTROL_PLANE_API_KEY
 {{- end -}}
 {{- end -}}
+
+{{/*
+Labels the control plane adds to the runner/scaffold pods of this release. The release
+namespace is included so same-named releases from different namespaces sharing one
+runner namespace are still told apart (e.g. by the runner NetworkPolicy).
+*/}}
+{{- define "dm-sql-to-falkordb.runnerReleaseLabels" -}}
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+dm.falkordb/release-namespace: {{ .Release.Namespace | quote }}
+{{- end -}}
