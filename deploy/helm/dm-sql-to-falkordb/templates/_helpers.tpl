@@ -87,3 +87,49 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- join "," (sortAlpha $tools) -}}
 {{- end -}}
+
+{{/*
+Service account used by runner/scaffold pods. An explicit kubernetesRunner.serviceAccountName
+wins; otherwise the chart-managed runner account (no RBAC, no token) is used, or the
+existing account named by kubernetesRunner.serviceAccount.name when create=false.
+*/}}
+{{- define "dm-sql-to-falkordb.runnerServiceAccountName" -}}
+{{- if .Values.kubernetesRunner.serviceAccountName -}}
+{{- .Values.kubernetesRunner.serviceAccountName -}}
+{{- else if .Values.kubernetesRunner.serviceAccount.create -}}
+{{- default (printf "%s-runner" (include "dm-sql-to-falkordb.fullname" .)) .Values.kubernetesRunner.serviceAccount.name -}}
+{{- else if .Values.kubernetesRunner.serviceAccount.name -}}
+{{- .Values.kubernetesRunner.serviceAccount.name -}}
+{{- else -}}
+{{- fail "kubernetesRunner.serviceAccount.create=false requires kubernetesRunner.serviceAccount.name (or kubernetesRunner.serviceAccountName); runner pods must not silently reuse the control-plane service account" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Name of the Secret holding the control-plane API key, or empty when no key is configured.
+*/}}
+{{- define "dm-sql-to-falkordb.apiKeySecretName" -}}
+{{- if .Values.controlPlane.existingApiKeySecret -}}
+{{- .Values.controlPlane.existingApiKeySecret -}}
+{{- else if .Values.controlPlane.apiKey -}}
+{{- printf "%s-api-key" (include "dm-sql-to-falkordb.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "dm-sql-to-falkordb.apiKeySecretKey" -}}
+{{- if .Values.controlPlane.existingApiKeySecret -}}
+{{- .Values.controlPlane.existingApiKeySecretKey | default "CONTROL_PLANE_API_KEY" -}}
+{{- else -}}
+CONTROL_PLANE_API_KEY
+{{- end -}}
+{{- end -}}
+
+{{/*
+Labels the control plane adds to the runner/scaffold pods of this release. The release
+namespace is included so same-named releases from different namespaces sharing one
+runner namespace are still told apart (e.g. by the runner NetworkPolicy).
+*/}}
+{{- define "dm-sql-to-falkordb.runnerReleaseLabels" -}}
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
+dm.falkordb/release-namespace: {{ .Release.Namespace | quote }}
+{{- end -}}

@@ -21,7 +21,7 @@ use crate::metrics::{collect_tool_metrics, collect_tool_metrics_with_endpoint};
 use crate::models::{bad_request, not_found};
 use crate::models::{
     ApiResult, AppState, ExecutionBackend, RunBackend, RunEvent, RunExecutionRef, RunMode,
-    RunRecord, RunStatus, StartRunRequest,
+    RunRecord, RunStatus, RunnerPodHardening, StartRunRequest,
 };
 use crate::store::Store;
 use crate::tools::Tool;
@@ -60,7 +60,7 @@ struct KubernetesRuntime {
     shared_pvc_name: Option<String>,
     env_secret_name: Option<String>,
     env_configmap_name: Option<String>,
-    pod_fs_group: Option<i64>,
+    runner_pod: Box<RunnerPodHardening>,
     binary_path: String,
 }
 
@@ -564,7 +564,7 @@ fn build_kubernetes_runtime(
         shared_pvc_name: state.execution.kubernetes.shared_pvc_name.clone(),
         env_secret_name: state.execution.kubernetes.env_secret_name.clone(),
         env_configmap_name: state.execution.kubernetes.env_configmap_name.clone(),
-        pod_fs_group: state.execution.kubernetes.pod_fs_group,
+        runner_pod: Box::new(state.execution.kubernetes.runner_pod.clone()),
         binary_path,
     })
 }
@@ -609,10 +609,11 @@ fn build_kubernetes_workload_manifest(
     mode: RunMode,
 ) -> serde_json::Value {
     let run_id_label = runtime.workload_name.trim_start_matches("dm-run-");
-    let labels = json!({
+    let mut labels = json!({
         "app.kubernetes.io/name": "falkordb-migrate-runner",
         "dm.falkordb/run-id": run_id_label,
     });
+    runtime.runner_pod.apply_labels(&mut labels);
 
     let mut volumes = vec![json!({
         "name": "run-config",
@@ -678,17 +679,6 @@ fn build_kubernetes_workload_manifest(
         }
     }
 
-    if let Some(fs_group) = runtime.pod_fs_group {
-        if let Some(spec) = pod_spec.as_object_mut() {
-            spec.insert(
-                "securityContext".to_string(),
-                json!({
-                    "fsGroup": fs_group
-                }),
-            );
-        }
-    }
-
     if !env_from.is_empty() {
         if let Some(containers) = pod_spec
             .get_mut("containers")
@@ -699,6 +689,8 @@ fn build_kubernetes_workload_manifest(
             }
         }
     }
+
+    runtime.runner_pod.apply(&mut pod_spec);
 
     match mode {
         RunMode::OneShot => json!({
@@ -1689,7 +1681,10 @@ mod tests {
                     env_configmap_name: Some("tool-env-config".to_string()),
                     kubectl_bin: kubectl_path.to_string_lossy().to_string(),
                     binary_dir: "/opt/falkordb/bin".to_string(),
-                    pod_fs_group: Some(10002),
+                    runner_pod: RunnerPodHardening {
+                        pod_fs_group: Some(10002),
+                        ..Default::default()
+                    },
                 },
             },
             api_key: None,

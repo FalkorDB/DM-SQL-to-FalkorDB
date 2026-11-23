@@ -1,6 +1,17 @@
-**/target/debug
-**/target/debug/**
-.cargo-target-shared/debug
-.cargo-target-shared/debug/**
+# Keep the build context small and free of secrets / VCS metadata.
+.git
+.github
+.gitignore
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/node_modules
+**/target
 .cargo-target-shared/
 .cargo/
+control-plane/data
+control-plane/ui/dist
+deploy
+docker/build-images.sh
+**/.DS_Store

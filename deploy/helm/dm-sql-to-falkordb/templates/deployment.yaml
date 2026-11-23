@@ -13,12 +13,24 @@ spec:
     metadata:
       labels:
         {{- include "dm-sql-to-falkordb.selectorLabels" . | nindent 8 }}
+        {{- with .Values.controlPlane.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.controlPlane.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
       serviceAccountName: {{ include "dm-sql-to-falkordb.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.controlPlane.serviceAccount.automountServiceAccountToken }}
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
       {{- with .Values.controlPlane.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -36,6 +48,10 @@ spec:
               containerPort: 3003
               protocol: TCP
           env:
+            # kubectl caches API discovery under $HOME/.kube; keep it on the /tmp emptyDir
+            # so the root filesystem can stay read-only.
+            - name: HOME
+              value: /tmp
             - name: CONTROL_PLANE_BIND
               value: {{ .Values.controlPlane.bindAddress | quote }}
             - name: CONTROL_PLANE_EXECUTION_BACKEND
@@ -54,18 +70,32 @@ spec:
               value: kubectl
             - name: CONTROL_PLANE_K8S_BINARY_DIR
               value: {{ .Values.kubernetesRunner.binaryDir | quote }}
-            {{- if .Values.kubernetesRunner.serviceAccountName }}
             - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
-              value: {{ .Values.kubernetesRunner.serviceAccountName | quote }}
-            {{- else }}
-            - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
-              value: {{ include "dm-sql-to-falkordb.serviceAccountName" . | quote }}
+              value: {{ include "dm-sql-to-falkordb.runnerServiceAccountName" . | quote }}
+            # Release-specific labels (name + namespace) on runner/scaffold pods so this
+            # release's NetworkPolicy never selects another release's runners, even when
+            # same-named releases from different namespaces share a runner namespace.
+            - name: CONTROL_PLANE_K8S_RUNNER_LABELS
+              value: {{ include "dm-sql-to-falkordb.runnerReleaseLabels" . | fromYaml | toJson | quote }}
+            - name: CONTROL_PLANE_K8S_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN
+              value: {{ .Values.kubernetesRunner.automountServiceAccountToken | quote }}
+            {{- with .Values.kubernetesRunner.podSecurityContext }}
+            - name: CONTROL_PLANE_K8S_POD_SECURITY_CONTEXT
+              value: {{ toJson . | quote }}
+            {{- end }}
+            {{- with .Values.kubernetesRunner.securityContext }}
+            - name: CONTROL_PLANE_K8S_CONTAINER_SECURITY_CONTEXT
+              value: {{ toJson . | quote }}
+            {{- end }}
+            {{- with .Values.kubernetesRunner.resources }}
+            - name: CONTROL_PLANE_K8S_RUNNER_RESOURCES
+              value: {{ toJson . | quote }}
             {{- end }}
             {{- if .Values.kubernetesRunner.sharedPvc.enabled }}
             - name: CONTROL_PLANE_K8S_SHARED_PVC
               value: {{ include "dm-sql-to-falkordb.runnerSharedPvcName" . | quote }}
             {{- end }}
-            {{- if .Values.kubernetesRunner.podSecurityContext.fsGroup }}
+            {{- if (.Values.kubernetesRunner.podSecurityContext | default dict).fsGroup }}
             - name: CONTROL_PLANE_K8S_POD_FS_GROUP
               value: {{ .Values.kubernetesRunner.podSecurityContext.fsGroup | quote }}
             {{- end }}
@@ -77,12 +107,16 @@ spec:
             - name: CONTROL_PLANE_K8S_ENV_CONFIGMAP
               value: {{ .Values.kubernetesRunner.envConfigMapName | quote }}
             {{- end }}
-            {{- if .Values.controlPlane.apiKey }}
+            {{- with (include "dm-sql-to-falkordb.apiKeySecretName" .) }}
+            # A key source is configured: fail startup instead of running unauthenticated
+            # if the Secret value turns out to be empty.
+            - name: CONTROL_PLANE_API_KEY_REQUIRED
+              value: "true"
             - name: CONTROL_PLANE_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "dm-sql-to-falkordb.fullname" . }}-api-key
-                  key: CONTROL_PLANE_API_KEY
+                  name: {{ . }}
+                  key: {{ include "dm-sql-to-falkordb.apiKeySecretKey" $ }}
             {{- end }}
             {{- with .Values.controlPlane.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -104,7 +138,16 @@ spec:
           volumeMounts:
             - name: control-plane-data
               mountPath: /var/lib/falkordb-control-plane
+            - name: tmp
+              mountPath: /tmp
       volumes:
+        - name: tmp
+          {{- with (.Values.controlPlane.tmpVolume | default dict).sizeLimit }}
+          emptyDir:
+            sizeLimit: {{ . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: control-plane-data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:

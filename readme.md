@@ -470,6 +470,26 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql 
 
 This keeps operations on one control-plane instance/version while enabling any subset of tools.
 
+#### Security defaults
+
+The chart's defaults satisfy the Kubernetes [`restricted` Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted). That covers the control-plane pod and the runner/scaffold pods the control plane creates at runtime. You can install into a namespace that enforces it:
+
+```bash
+kubectl create namespace dm-sql
+kubectl label namespace dm-sql pod-security.kubernetes.io/enforce=restricted
+kubectl -n dm-sql create secret generic dm-sql-api-key --from-literal=CONTROL_PLANE_API_KEY="$(openssl rand -hex 32)"
+# Read the key back when you need it for API calls (Authorization: Bearer <key>) or the UI's "API key" button:
+kubectl -n dm-sql get secret dm-sql-api-key -o jsonpath='{.data.CONTROL_PLANE_API_KEY}' | base64 -d
+helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --set controlPlane.existingApiKeySecret=dm-sql-api-key
+```
+
+- Both images run as numeric non-root users (control plane `10001`, runner `10002`). The control-plane image is distroless and runs with a read-only root filesystem.
+- Pods drop all capabilities, disallow privilege escalation and use the `RuntimeDefault` seccomp profile. Runner pod settings come from `kubernetesRunner.podSecurityContext`, `kubernetesRunner.securityContext` and `kubernetesRunner.resources`.
+- Runner pods use a dedicated service account (`<release>-runner`) that has no RBAC and no mounted token. Set `kubernetesRunner.serviceAccountName` to use your own account instead, for example one carrying cloud workload-identity annotations.
+- Protect the API with `controlPlane.existingApiKeySecret` (preferred) or `controlPlane.apiKey`. The API is unauthenticated without one.
+- Set `networkPolicy.enabled=true` to add NetworkPolicies (your CNI must enforce NetworkPolicy). Runner pods then accept traffic only from this release's control plane. For the control plane, the default `networkPolicy.controlPlane.ingressFrom: []` only limits ingress to the HTTP port and still allows any source; set `ingressFrom` to the peers that may reach the API (for example your ingress controller's namespace) to restrict sources. When upgrading an existing release, stop and restart any runs (especially daemon-mode runs) that were started before the upgrade: the runner policy selects pods by release labels the control plane only adds to newly created workloads, so older runner pods stay outside it.
+- On OpenShift (`restricted-v2`), unset the fixed IDs so the platform can assign them: set `runAsUser`, `runAsGroup` and `fsGroup` to `null` under both `controlPlane.podSecurityContext` and `kubernetesRunner.podSecurityContext`.
+
 <a id="deployment-architecture"></a>
 ### Deployment architecture
 

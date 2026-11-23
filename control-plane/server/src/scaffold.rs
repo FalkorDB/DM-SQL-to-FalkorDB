@@ -456,10 +456,15 @@ fn build_scaffold_job_manifest(
         }));
     }
 
-    let labels = json!({
+    let mut labels = json!({
         "app.kubernetes.io/name": "falkordb-migrate-scaffold",
         "dm.falkordb/scaffold-id": run_token,
     });
+    state
+        .execution
+        .kubernetes
+        .runner_pod
+        .apply_labels(&mut labels);
 
     let mut pod_spec = json!({
         "restartPolicy": "Never",
@@ -493,6 +498,8 @@ fn build_scaffold_job_manifest(
             }
         }
     }
+
+    state.execution.kubernetes.runner_pod.apply(&mut pod_spec);
 
     json!({
         "apiVersion": "batch/v1",
