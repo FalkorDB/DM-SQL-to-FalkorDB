@@ -111,6 +111,15 @@ struct Cli {
     /// Optional pod-level automountServiceAccountToken applied to runner workloads.
     #[arg(long, env = "CONTROL_PLANE_K8S_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN")]
     k8s_automount_service_account_token: Option<bool>,
+
+    /// Optional extra labels (JSON object) added to runner/scaffold workloads and pods.
+    #[arg(long, env = "CONTROL_PLANE_K8S_RUNNER_LABELS")]
+    k8s_runner_labels: Option<String>,
+
+    /// Refuse to start when CONTROL_PLANE_API_KEY is empty. Set when an API key source
+    /// (e.g. a Secret) is configured, so an empty placeholder cannot silently disable auth.
+    #[arg(long, env = "CONTROL_PLANE_API_KEY_REQUIRED", default_value_t = false)]
+    api_key_required: bool,
 }
 
 /// Parses an optional JSON-object CLI/env value. Empty strings are treated as unset.
@@ -166,6 +175,15 @@ async fn main() -> anyhow::Result<()> {
     let execution_backend = models::ExecutionBackend::parse(&cli.execution_backend)
         .context("failed to parse CONTROL_PLANE_EXECUTION_BACKEND")?;
 
+    let api_key = std::env::var("CONTROL_PLANE_API_KEY")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    if cli.api_key_required && api_key.is_none() {
+        anyhow::bail!(
+            "CONTROL_PLANE_API_KEY_REQUIRED is set but CONTROL_PLANE_API_KEY is empty; refusing to start with authentication disabled"
+        );
+    }
+
     let app_state = models::AppState {
         repo_root: repo_root.clone(),
         data_dir,
@@ -199,12 +217,14 @@ async fn main() -> anyhow::Result<()> {
                         cli.k8s_runner_resources,
                     )?,
                     automount_service_account_token: cli.k8s_automount_service_account_token,
+                    extra_labels: parse_json_object_arg(
+                        "CONTROL_PLANE_K8S_RUNNER_LABELS",
+                        cli.k8s_runner_labels,
+                    )?,
                 },
             },
         },
-        api_key: std::env::var("CONTROL_PLANE_API_KEY")
-            .ok()
-            .filter(|v| !v.is_empty()),
+        api_key,
     };
 
     let api_routes = Router::new()

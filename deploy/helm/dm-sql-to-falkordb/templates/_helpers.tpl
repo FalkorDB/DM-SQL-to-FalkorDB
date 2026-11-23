@@ -90,15 +90,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Service account used by runner/scaffold pods. An explicit kubernetesRunner.serviceAccountName
-wins; otherwise the chart-managed runner account (no RBAC, no token) is used.
+wins; otherwise the chart-managed runner account (no RBAC, no token) is used, or the
+existing account named by kubernetesRunner.serviceAccount.name when create=false.
 */}}
 {{- define "dm-sql-to-falkordb.runnerServiceAccountName" -}}
 {{- if .Values.kubernetesRunner.serviceAccountName -}}
 {{- .Values.kubernetesRunner.serviceAccountName -}}
 {{- else if .Values.kubernetesRunner.serviceAccount.create -}}
 {{- default (printf "%s-runner" (include "dm-sql-to-falkordb.fullname" .)) .Values.kubernetesRunner.serviceAccount.name -}}
+{{- else if .Values.kubernetesRunner.serviceAccount.name -}}
+{{- .Values.kubernetesRunner.serviceAccount.name -}}
 {{- else -}}
-{{- include "dm-sql-to-falkordb.serviceAccountName" . -}}
+{{- fail "kubernetesRunner.serviceAccount.create=false requires kubernetesRunner.serviceAccount.name (or kubernetesRunner.serviceAccountName); runner pods must not silently reuse the control-plane service account" -}}
 {{- end -}}
 {{- end -}}
 

@@ -609,10 +609,11 @@ fn build_kubernetes_workload_manifest(
     mode: RunMode,
 ) -> serde_json::Value {
     let run_id_label = runtime.workload_name.trim_start_matches("dm-run-");
-    let labels = json!({
+    let mut labels = json!({
         "app.kubernetes.io/name": "falkordb-migrate-runner",
         "dm.falkordb/run-id": run_id_label,
     });
+    runtime.runner_pod.apply_labels(&mut labels);
 
     let mut volumes = vec![json!({
         "name": "run-config",

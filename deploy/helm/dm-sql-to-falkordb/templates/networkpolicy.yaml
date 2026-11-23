@@ -39,6 +39,8 @@ metadata:
     app.kubernetes.io/component: runner
 spec:
   podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In

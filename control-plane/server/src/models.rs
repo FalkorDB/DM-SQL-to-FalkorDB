@@ -73,13 +73,32 @@ pub struct RunnerPodHardening {
     pub resources: Option<serde_json::Value>,
     /// Pod-level `automountServiceAccountToken`.
     pub automount_service_account_token: Option<bool>,
+    /// Extra labels (JSON object of string values) added to runner workloads and their
+    /// pod templates, e.g. a release-specific label used by NetworkPolicy selectors.
+    pub extra_labels: Option<serde_json::Value>,
 }
 
 impl RunnerPodHardening {
+    /// Merges `extra_labels` into a labels object. Built-in labels are never overridden.
+    pub fn apply_labels(&self, labels: &mut serde_json::Value) {
+        let (Some(extra), Some(target)) = (
+            self.extra_labels.as_ref().and_then(|v| v.as_object()),
+            labels.as_object_mut(),
+        ) else {
+            return;
+        };
+        for (k, v) in extra {
+            if v.is_string() {
+                target.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+    }
+
     /// Applies the configured settings to a pod spec that has a single runner
-    /// container. When the container uses a read-only root filesystem, writable
-    /// `emptyDir` volumes are mounted at `/tmp` (and at `/workspace` when no shared
-    /// workspace volume is mounted there) so tools can still write scratch files.
+    /// container. When no shared workspace volume is mounted at `/workspace`, an
+    /// `emptyDir` is mounted there so tools can write file-backed state regardless of
+    /// the UID the pod runs as (e.g. OpenShift arbitrary UIDs). When the container uses
+    /// a read-only root filesystem, an `emptyDir` is also mounted at `/tmp`.
     pub fn apply(&self, pod_spec: &mut serde_json::Value) {
         let Some(spec) = pod_spec.as_object_mut() else {
             return;
@@ -138,7 +157,11 @@ impl RunnerPodHardening {
                 container.insert("resources".to_string(), resources.clone());
             }
 
+            let mut scratch = vec![("workspace-scratch", "/workspace")];
             if read_only_root {
+                scratch.insert(0, ("tmp", "/tmp"));
+            }
+            {
                 let mounts = container
                     .entry("volumeMounts".to_string())
                     .or_insert_with(|| serde_json::Value::Array(Vec::new()));
@@ -148,7 +171,7 @@ impl RunnerPodHardening {
                             .iter()
                             .any(|m| m.get("mountPath").and_then(|p| p.as_str()) == Some(path))
                     };
-                    for (name, path) in [("tmp", "/tmp"), ("workspace-scratch", "/workspace")] {
+                    for (name, path) in scratch {
                         if !has_mount(mounts, path) {
                             mounts.push(serde_json::json!({ "name": name, "mountPath": path }));
                             extra_volumes.push(serde_json::json!({ "name": name, "emptyDir": {} }));
@@ -416,10 +439,35 @@ mod runner_pod_hardening_tests {
     }
 
     #[test]
-    fn default_is_noop() {
+    fn default_only_adds_workspace_scratch() {
         let mut spec = base_pod_spec();
         RunnerPodHardening::default().apply(&mut spec);
-        assert_eq!(spec, base_pod_spec());
+        assert!(spec.get("securityContext").is_none());
+        let mounts = spec["containers"][0]["volumeMounts"].as_array().unwrap();
+        assert_eq!(mounts.len(), 2);
+        assert_eq!(mounts[1]["mountPath"], json!("/workspace"));
+        assert_eq!(spec["volumes"][1]["emptyDir"], json!({}));
+    }
+
+    #[test]
+    fn extra_labels_do_not_override_builtin() {
+        let hardening = RunnerPodHardening {
+            extra_labels: Some(json!({
+                "app.kubernetes.io/instance": "rel-a",
+                "app.kubernetes.io/name": "evil",
+                "ignored": 1
+            })),
+            ..Default::default()
+        };
+        let mut labels = json!({ "app.kubernetes.io/name": "falkordb-migrate-runner" });
+        hardening.apply_labels(&mut labels);
+        assert_eq!(
+            labels,
+            json!({
+                "app.kubernetes.io/name": "falkordb-migrate-runner",
+                "app.kubernetes.io/instance": "rel-a"
+            })
+        );
     }
 
     #[test]
@@ -431,6 +479,7 @@ mod runner_pod_hardening_tests {
         }
         .apply(&mut spec);
         assert_eq!(spec["securityContext"], json!({ "fsGroup": 10002 }));
+        assert!(spec["containers"][0].get("securityContext").is_none());
     }
 
     #[test]
@@ -450,6 +499,7 @@ mod runner_pod_hardening_tests {
             })),
             resources: Some(json!({ "limits": { "memory": "1Gi" } })),
             automount_service_account_token: Some(false),
+            extra_labels: None,
         }
         .apply(&mut spec);
 

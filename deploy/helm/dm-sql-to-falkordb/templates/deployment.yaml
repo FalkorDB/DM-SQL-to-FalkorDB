@@ -72,6 +72,10 @@ spec:
               value: {{ .Values.kubernetesRunner.binaryDir | quote }}
             - name: CONTROL_PLANE_K8S_SERVICE_ACCOUNT
               value: {{ include "dm-sql-to-falkordb.runnerServiceAccountName" . | quote }}
+            # Release-specific label on runner/scaffold pods so this release's
+            # NetworkPolicy never selects another release's runners.
+            - name: CONTROL_PLANE_K8S_RUNNER_LABELS
+              value: {{ dict "app.kubernetes.io/instance" .Release.Name | toJson | quote }}
             - name: CONTROL_PLANE_K8S_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN
               value: {{ .Values.kubernetesRunner.automountServiceAccountToken | quote }}
             {{- with .Values.kubernetesRunner.podSecurityContext }}
@@ -103,6 +107,10 @@ spec:
               value: {{ .Values.kubernetesRunner.envConfigMapName | quote }}
             {{- end }}
             {{- with (include "dm-sql-to-falkordb.apiKeySecretName" .) }}
+            # A key source is configured: fail startup instead of running unauthenticated
+            # if the Secret value turns out to be empty.
+            - name: CONTROL_PLANE_API_KEY_REQUIRED
+              value: "true"
             - name: CONTROL_PLANE_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -133,10 +141,12 @@ spec:
               mountPath: /tmp
       volumes:
         - name: tmp
+          {{- with (.Values.controlPlane.tmpVolume | default dict).sizeLimit }}
           emptyDir:
-            {{- with .Values.controlPlane.tmpVolume.sizeLimit }}
             sizeLimit: {{ . }}
-            {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: control-plane-data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:

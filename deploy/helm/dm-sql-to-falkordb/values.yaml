@@ -135,6 +135,8 @@ kubernetesRunner:
   # get a dedicated service account with no RBAC and no mounted token instead of the
   # control plane's (which can create Jobs/Deployments).
   # Setting `serviceAccountName` uses that existing account and skips creating one.
+  # With `serviceAccount.create: false`, `serviceAccount.name` must name an existing
+  # account; the chart refuses to fall back to the control-plane account.
   serviceAccountName: ""
   serviceAccount:
     create: true
