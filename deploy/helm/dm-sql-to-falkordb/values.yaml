@@ -201,4 +201,9 @@ networkPolicy:
   runner:
     # Restrict ingress to runner/scaffold pods to the control plane (metrics scraping).
     # Runner egress is left open because migration sources are arbitrary.
+    # Upgrading: the policy selects runner pods by release labels that the control
+    # plane only adds to workloads it creates after this chart version. Runner
+    # workloads started earlier (notably daemon-mode Deployments, which Helm does not
+    # manage) are not selected and keep unrestricted ingress until they are stopped
+    # and started again from the control plane.
     enabled: true

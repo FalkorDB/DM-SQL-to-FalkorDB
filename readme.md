@@ -487,7 +487,7 @@ helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql 
 - Pods drop all capabilities, disallow privilege escalation and use the `RuntimeDefault` seccomp profile. Runner pod settings come from `kubernetesRunner.podSecurityContext`, `kubernetesRunner.securityContext` and `kubernetesRunner.resources`.
 - Runner pods use a dedicated service account (`<release>-runner`) that has no RBAC and no mounted token. Set `kubernetesRunner.serviceAccountName` to use your own account instead, for example one carrying cloud workload-identity annotations.
 - Protect the API with `controlPlane.existingApiKeySecret` (preferred) or `controlPlane.apiKey`. The API is unauthenticated without one.
-- Set `networkPolicy.enabled=true` to restrict ingress to the control plane and to runner pods.
+- Set `networkPolicy.enabled=true` to restrict ingress to the control plane and to runner pods. When upgrading an existing release, stop and restart any runs (especially daemon-mode runs) that were started before the upgrade: the runner policy selects pods by release labels the control plane only adds to newly created workloads, so older runner pods stay outside it.
 - On OpenShift (`restricted-v2`), unset the fixed IDs so the platform can assign them: set `runAsUser`, `runAsGroup` and `fsGroup` to `null` under both `controlPlane.podSecurityContext` and `kubernetesRunner.podSecurityContext`.
 
 <a id="deployment-architecture"></a>

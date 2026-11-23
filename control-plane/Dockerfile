@@ -15,6 +15,7 @@ RUN cargo build --manifest-path control-plane/server/Cargo.toml --release
 # (discovered by walking CONTROL_PLANE_REPO_ROOT) and the Cargo.toml it points to via
 # `manifestPath` (used to infer the runner binary name). Shipping the whole source tree
 # and its build artifacts (target/) bloated the image and exposed source code.
+# Also stage libgcc_s (needed by Rust binaries for unwinding), which the runtime base lacks.
 RUN set -eu; \
     mkdir -p /out/repo; \
     find . -maxdepth 4 -name tool.manifest.json -not -path '*/target/*' | while read -r manifest; do \
@@ -24,7 +25,10 @@ RUN set -eu; \
       done; \
     done; \
     test -n "$(find /out/repo -name tool.manifest.json)"; \
-    mkdir -p /out/data-dir/runs /out/data-dir/configs
+    mkdir -p /out/data-dir/runs /out/data-dir/configs; \
+    multiarch="$(gcc -dumpmachine)"; \
+    mkdir -p "/out/lib/${multiarch}"; \
+    cp -L "/lib/${multiarch}/libgcc_s.so.1" "/out/lib/${multiarch}/"
 
 # Build kubectl from source instead of downloading the upstream release binary.
 # The upstream binary is built against whatever Go toolchain and Go module
@@ -54,11 +58,14 @@ RUN go get "golang.org/x/net@${GOLANG_X_NET_VERSION}" "golang.org/x/text@${GOLAN
         -ldflags "-s -w -X k8s.io/component-base/version.gitVersion=${KUBECTL_VERSION} -X k8s.io/component-base/version.gitTreeState=clean" \
         -o /out/kubectl ./cmd/kubectl
 
-# Distroless runtime: no shell, no package manager, no setuid binaries. It ships
-# glibc, libgcc, ca-certificates and tzdata, which is all the (rustls-based) control
-# plane and the statically linked kubectl need. The image runs as a numeric non-root
+# Distroless runtime: no shell, no package manager, no setuid binaries. The `nossl`
+# variant ships only glibc, ca-certificates and tzdata: the control plane uses rustls
+# and kubectl is a static Go binary, so OpenSSL (and its CVE stream) is not needed.
+# libgcc_s is copied from the build stage. The image runs as a numeric non-root
 # UID/GID so Kubernetes can enforce `runAsNonRoot` without an explicit `runAsUser`.
-FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+FROM gcr.io/distroless/base-nossl-debian12:nonroot AS runtime
+
+COPY --from=server-build --chown=0:0 /out/lib/ /lib/
 
 # Binaries and static assets are owned by root and not writable by the runtime user.
 COPY --from=kubectl-build --chown=0:0 --chmod=0755 /out/kubectl /usr/local/bin/kubectl
