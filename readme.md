@@ -478,6 +478,8 @@ The chart's defaults satisfy the Kubernetes [`restricted` Pod Security Standard]
 kubectl create namespace dm-sql
 kubectl label namespace dm-sql pod-security.kubernetes.io/enforce=restricted
 kubectl -n dm-sql create secret generic dm-sql-api-key --from-literal=CONTROL_PLANE_API_KEY="$(openssl rand -hex 32)"
+# Read the key back when you need it for API calls (Authorization: Bearer <key>) or the UI's "API key" button:
+kubectl -n dm-sql get secret dm-sql-api-key -o jsonpath='{.data.CONTROL_PLANE_API_KEY}' | base64 -d
 helm upgrade --install dm-sql deploy/helm/dm-sql-to-falkordb --namespace dm-sql --set controlPlane.existingApiKeySecret=dm-sql-api-key
 ```
 
